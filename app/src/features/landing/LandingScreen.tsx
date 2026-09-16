@@ -23,8 +23,8 @@ export default function LandingScreen() {
   useEffect(() => {
     t.value = withRepeat(withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }), -1, true);
   }, [t]);
-  const float = useAnimatedStyle(() => ({ transform: [{ translateY: -6 + t.value * 12 }] }));
-  const shadowStyle = useAnimatedStyle(() => ({ opacity: 0.32 - t.value * 0.14, transform: [{ scaleX: 1 - t.value * 0.2 }] }));
+  const float = useAnimatedStyle(() => ({ transform: [{ translateY: -7 + t.value * 14 }] }));
+  const row = width >= 720;
 
   return (
     <Background>
@@ -33,7 +33,6 @@ export default function LandingScreen() {
           <Animated.View style={[styles.logoWrap, float]}>
             <Image source={require("../../../public/chaplin_logo.png")} style={styles.logo} accessibilityLabel="Chaplin AI" />
           </Animated.View>
-          <Animated.View style={[styles.groundShadow, shadowStyle]} />
         </Animated.View>
 
         <Animated.Text entering={FadeInUp.delay(250).duration(700)} style={[styles.title, wide && styles.titleWide]}>
@@ -46,17 +45,17 @@ export default function LandingScreen() {
           A communication agent for non-vocal, ventilated patients.
         </Animated.Text>
 
-        <View style={[styles.steps, wide && styles.stepsWide]}>
+        <View style={[styles.steps, row && styles.stepsRow]}>
           {STEPS.map((s, i) => (
-            <Animated.View key={s.title} entering={FadeInUp.delay(850 + i * 220).duration(650)} style={[styles.stepWrap, wide && styles.stepWrapWide]}>
+            <Animated.View key={s.title} entering={FadeInUp.delay(850 + i * 220).duration(650)} style={row && styles.stepWrapRow}>
               <GlassPanel liquid style={styles.step}>
-                <View style={[styles.stepRow, wide && styles.stepCol]}>
+                <View style={[styles.stepRow, row && styles.stepCol]}>
                   <View style={styles.emojiWrap}>
                     <Text style={styles.emoji}>{s.emoji}</Text>
                   </View>
-                  <View style={[styles.stepText, wide && { alignItems: "center" }]}>
-                    <Text style={[styles.stepTitle, wide && { textAlign: "center" }]}>{s.title}</Text>
-                    <Text style={[styles.stepBody, wide && { textAlign: "center" }]}>{s.text}</Text>
+                  <View style={[styles.stepText, row && { alignItems: "center" }]}>
+                    <Text style={[styles.stepTitle, row && { textAlign: "center" }]}>{s.title}</Text>
+                    <Text style={[styles.stepBody, row && { textAlign: "center" }]}>{s.text}</Text>
                   </View>
                 </View>
               </GlassPanel>
@@ -82,19 +81,17 @@ export default function LandingScreen() {
 
 const styles = StyleSheet.create({
   scroll: { flexGrow: 1, alignItems: "center", paddingHorizontal: 24, gap: 10 },
-  hero: { width: 160, height: 160, alignItems: "center", justifyContent: "flex-start", marginBottom: 2 },
+  hero: { width: 160, height: 140, alignItems: "center", justifyContent: "center", marginBottom: 2 },
   logoWrap: { width: 120, height: 120, alignItems: "center", justifyContent: "center" },
   logo: { width: 104, height: 104 },
-  groundShadow: { position: "absolute", bottom: 4, width: 120, height: 18, borderRadius: 60, backgroundColor: colors.accent, filter: "blur(14px)" },
   title: { fontSize: 40, fontWeight: "700", color: colors.text, letterSpacing: -1, fontFamily, textAlign: "center" },
   titleWide: { fontSize: 56 },
   tagline: { fontSize: 22, fontWeight: "600", color: colors.accent, textAlign: "center", fontFamily, marginTop: -2 },
   taglineWide: { fontSize: 26 },
   sub: { fontSize: 16, color: colors.muted, textAlign: "center", maxWidth: 420, lineHeight: 24, fontFamily },
   steps: { width: "100%", maxWidth: 520, gap: 12, marginTop: 18 },
-  stepsWide: { maxWidth: 960, flexDirection: "row", alignItems: "stretch" },
-  stepWrap: {},
-  stepWrapWide: { flex: 1 },
+  stepsRow: { maxWidth: 960, flexDirection: "row", flexWrap: "wrap", alignItems: "stretch", justifyContent: "center" },
+  stepWrapRow: { flexGrow: 1, flexBasis: 200, maxWidth: 320 },
   step: { flex: 1 },
   stepRow: { flexDirection: "row", alignItems: "center", gap: 14 },
   stepCol: { flexDirection: "column", gap: 10, paddingVertical: 6 },
@@ -102,7 +99,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: "rgba(124,108,246,0.12)",
+    backgroundColor: "rgba(255,255,255,0.85)",
     alignItems: "center",
     justifyContent: "center",
   },
