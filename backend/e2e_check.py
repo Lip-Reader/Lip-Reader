@@ -1,4 +1,4 @@
-﻿"""End-to-end check for both FastAPI apps (in-process TestClient), PASS/FAIL per stage.
+"""End-to-end check for both FastAPI apps (in-process TestClient), PASS/FAIL per stage.
 
 Run:  uv run python backend/e2e_check.py
 """
@@ -14,7 +14,6 @@ from backend.app import config  # noqa: E402
 
 CAPTURE_SECONDS = 4
 FPS = 16
-EXECUTE_PROMPT = "IM SO EXCITED TO ME YOU TODAY"
 
 
 def step(msg: str) -> None:
@@ -60,22 +59,24 @@ def main() -> int:
     from backend.app.main import app
     from backend.app.vsr_main import app as vsr_app
 
-    ok = {"env": False, "team_info": False, "agent_info": False,
-          "architecture": False, "execute": False, "execute_conv": False,
-          "execute_lips": False, "speak": False, "chat_store": False}
+    ok = {"env": False, "team_info": False, "agent_info": False, "architecture": False,
+          "settings_public": False, "support": False, "runs": False, "auth_guard": False,
+          "execute_lips": False, "speak": False, "db_ping": False}
 
-    step("1/9  Environment")
+    step("1/11  Environment")
     print(f"ANTHROPIC_API_KEY: {'set' if config.ANTHROPIC_API_KEY else 'MISSING'}")
     print(f"INWORLD_API_KEY  : {'set' if config.INWORLD_API_KEY else 'MISSING'}")
+    print(f"DATABASE_URL     : {'set' if config.DATABASE_URL else 'MISSING'}")
+    print(f"CLERK_SECRET_KEY : {'set' if config.CLERK_SECRET_KEY else 'unset (guest-only)'}")
     weights_ok = os.path.isfile(
         os.path.join(config.REPO_ROOT, "benchmarks/LRS3/models/LRS3_V_WER19.1/model.pth")
     )
     print(f"VSR weights      : {'present' if weights_ok else 'MISSING'}")
-    ok["env"] = bool(config.ANTHROPIC_API_KEY and config.INWORLD_API_KEY and weights_ok)
+    ok["env"] = bool(config.ANTHROPIC_API_KEY and config.INWORLD_API_KEY and config.DATABASE_URL and weights_ok)
 
     client = TestClient(app)
 
-    step("2/9  GET /api/team_info")
+    step("2/11  GET /api/team_info")
     r = client.get("/api/team_info")
     body = r.json() if r.status_code == 200 else {}
     ok["team_info"] = (
@@ -86,7 +87,7 @@ def main() -> int:
     )
     print(f"status: {r.status_code}  team: {body.get('team_name')!r}  students: {len(body.get('students', []))}")
 
-    step("3/9  GET /api/agent_info")
+    step("3/11  GET /api/agent_info")
     r = client.get("/api/agent_info")
     body = r.json() if r.status_code == 200 else {}
     ok["agent_info"] = (
@@ -97,54 +98,49 @@ def main() -> int:
     )
     print(f"status: {r.status_code}  keys: {sorted(body.keys())}")
 
-    step("4/9  GET /api/model_architecture")
+    step("4/11  GET /api/model_architecture")
     r = client.get("/api/model_architecture")
     ok["architecture"] = r.status_code == 200 and r.headers.get("content-type", "").startswith("image/png")
     print(f"status: {r.status_code}  content-type: {r.headers.get('content-type')}  bytes: {len(r.content)}")
 
-    step("5/9  POST /api/execute")
+    step("5/11  GET /api/settings/public")
     t0 = time.time()
-    r = client.post("/api/execute", json={"prompt": EXECUTE_PROMPT})
-    dt = time.time() - t0
+    r = client.get("/api/settings/public")
     body = r.json() if r.status_code == 200 else {}
-    steps_ok = (
-        body.get("steps")
-        and all({"module", "prompt", "response"} <= set(s) for s in body["steps"])
-        and {s["module"] for s in body["steps"]} <= {"correct"}
-    )
-    ok["execute"] = r.status_code == 200 and body.get("status") == "ok" and bool(body.get("response")) and bool(steps_ok)
-    print(f"status: {r.status_code}  latency: {dt:.1f}s")
-    print(f"prompt   : {EXECUTE_PROMPT!r}")
-    print(f"response : {body.get('response')!r}")
-    print(f"steps    : {[s['module'] for s in body.get('steps', [])]}")
-    r = client.post("/api/execute", json={"prompt": ""})
-    err = r.json()
-    if not (err.get("status") == "error" and err.get("response") is None and err.get("steps") == []):
-        ok["execute"] = False
-        print("ERROR-shape check failed:", err)
-
-    step("6/9  POST /api/execute (with conversation - contextual correction)")
-    conversation = [
-        {"role": "other", "content": "The nurse has your evening medication ready."},
-        {"role": "self", "content": "Thank you, I was waiting for it."},
-    ]
-    t0 = time.time()
-    r = client.post("/api/execute", json={"prompt": "WHERES MY BILL", "conversation": conversation})
-    dt = time.time() - t0
-    body = r.json() if r.status_code == 200 else {}
-    modules = [s["module"] for s in body.get("steps", [])]
-    ok["execute_conv"] = (
+    ok["settings_public"] = (
         r.status_code == 200
-        and body.get("status") == "ok"
-        and modules == ["correct"]
-        and "pill" in (body.get("response") or "").lower()
+        and isinstance(body.get("default_voice_id"), str)
+        and isinstance(body.get("lip_reading_enabled"), bool)
     )
-    print(f"status: {r.status_code}  latency: {dt:.1f}s")
-    print("prompt   : 'WHERES MY BILL'  context: nurse/medication")
-    print(f"response : {body.get('response')!r}")
-    print(f"steps    : {modules}")
+    print(f"status: {r.status_code}  latency: {time.time() - t0:.1f}s  body: {body or r.text[:120]}")
 
-    step("7/9  POST /api/execute_lips (vsr_lip_reader service)")
+    step("6/11  POST /api/support (guest)")
+    r = client.post("/api/support", json={"message": "e2e check message"})
+    body = r.json() if r.status_code == 200 else {}
+    empty = client.post("/api/support", json={"message": "  "}).status_code
+    ok["support"] = r.status_code == 200 and isinstance(body.get("id"), int) and empty == 400
+    print(f"status: {r.status_code}  id: {body.get('id')}  empty-message -> {empty}")
+
+    step("7/11  POST /api/runs (guest)")
+    r = client.post("/api/runs", json={"raw": "HELLO WORLD", "corrected": "Hello world.", "latency_ms": 1200})
+    body = r.json() if r.status_code == 200 else {}
+    ok["runs"] = r.status_code == 200 and isinstance(body.get("id"), int)
+    print(f"status: {r.status_code}  id: {body.get('id')}")
+
+    step("8/11  Auth guards (no token)")
+    me = client.get("/api/me/settings")
+    adm = client.get("/api/admin/overview")
+    expected = 401 if config.CLERK_SECRET_KEY else 503
+    ok["auth_guard"] = me.status_code == expected and adm.status_code == expected
+    print(f"expected {expected} ({'clerk configured' if config.CLERK_SECRET_KEY else 'auth not configured'})")
+    print(f"GET /api/me/settings   -> {me.status_code} {me.json().get('detail')!r}")
+    print(f"GET /api/admin/overview -> {adm.status_code} {adm.json().get('detail')!r}")
+    if config.CLERK_SECRET_KEY:
+        bad = client.get("/api/me/settings", headers={"Authorization": "Bearer not-a-token"})
+        ok["auth_guard"] = ok["auth_guard"] and bad.status_code == 401
+        print(f"GET /api/me/settings (bogus token) -> {bad.status_code}")
+
+    step("9/11  POST /api/execute_lips (vsr_lip_reader service)")
     vsr_client = TestClient(vsr_app)
     clip_path, kind = make_clip()
     speak_text = "Hello from Chaplin."
@@ -174,7 +170,7 @@ def main() -> int:
         if os.path.exists(clip_path):
             os.remove(clip_path)
 
-    step("8/9  POST /speak")
+    step("10/11  POST /speak")
     r = client.post("/speak", json={"text": speak_text})
     if r.status_code == 200 and r.json().get("audio"):
         body = r.json()
@@ -183,37 +179,17 @@ def main() -> int:
     else:
         print(f"status: {r.status_code} {r.text[:200]}")
 
-    step("9/9  Chat store (Supabase /api/chats + /api/db_ping)")
-    try:
-        t0 = time.time()
-        r = client.get("/api/db_ping")
-        ping_ok = r.status_code == 200 and r.json().get("db") == 1
-        print(f"db_ping  : {r.status_code}  latency: {time.time() - t0:.1f}s")
-        chat = client.post("/api/chats", json={}).json()
-        client.post(f"/api/chats/{chat['id']}/messages",
-                    json={"role": "other", "content": "e2e check message"})
-        msgs = client.get(f"/api/chats/{chat['id']}/messages").json()["messages"]
-        conversations = client.get("/api/chats").json()["conversations"]
-        listed = any(c["id"] == chat["id"] for c in conversations)
-        deleted = client.delete(f"/api/chats/{chat['id']}").status_code == 200
-        presets = [c for c in conversations if c["is_preset"]]
-        preset_guard = (
-            len(presets) == 6
-            and client.delete(f"/api/chats/{presets[0]['id']}").status_code == 403
-            and client.post(f"/api/chats/{presets[0]['id']}/messages",
-                            json={"role": "self", "content": "x"}).status_code == 403
-        )
-        ok["chat_store"] = bool(ping_ok and len(msgs) == 1 and listed and deleted and preset_guard)
-        print(f"create/append/list/delete: {bool(len(msgs) == 1 and listed and deleted)}")
-        print(f"presets seeded + protected (6, no delete/append): {preset_guard}")
-    except Exception as e:  # noqa: BLE001
-        print(f"chat store check failed: {e}")
+    step("11/11  GET /api/db_ping")
+    t0 = time.time()
+    r = client.get("/api/db_ping")
+    ok["db_ping"] = r.status_code == 200 and r.json().get("db") == 1
+    print(f"status: {r.status_code}  latency: {time.time() - t0:.1f}s")
 
     print("\n" + "=" * 44)
     print(" CHAPLIN AI BACKEND E2E")
     print("=" * 44)
     for k, v in ok.items():
-        print(f"  {k:13s}: {'PASS' if v else 'FAIL'}")
+        print(f"  {k:16s}: {'PASS' if v else 'FAIL'}")
     allpass = all(ok.values())
     print("=" * 44)
     print(" OVERALL:", "PASS" if allpass else "FAIL")

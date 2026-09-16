@@ -92,11 +92,7 @@ def health():
 @app.post("/api/execute_lips")
 def execute_lips(file: UploadFile = File(...), conversation: str | None = Form(None)):
     if config.DISABLE_VSR:
-        return _err(
-            "Lip-reading is not available on this deployment (the VSR model "
-            "is too large for serverless). Use Run Agent / POST /api/execute "
-            "with text instead."
-        )
+        return _err("Lip-reading is not available on this deployment (the VSR model is too large for serverless).")
     suffix = ".webm" if (file.content_type or "").endswith("webm") or (
         file.filename or ""
     ).endswith(".webm") else ".mp4"
