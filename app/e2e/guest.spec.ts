@@ -59,3 +59,8 @@ test("voice list shows five voices, then more on demand", async ({ page }) => {
   await page.getByRole("button", { name: /Show more/ }).click();
   await expect(page.getByRole("radio")).toHaveCount(8);
 });
+
+test("default voice is marked when nothing was chosen", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.getByRole("radio", { name: /Brian/ })).toHaveAttribute("aria-checked", "true");
+});

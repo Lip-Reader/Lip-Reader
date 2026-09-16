@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { getMySettings, putMySettings } from "../../lib/api";
+import { getMySettings, getPublicSettings, putMySettings } from "../../lib/api";
 import { useSession } from "../../lib/auth";
 import { storage } from "../../lib/storage";
 
@@ -38,8 +38,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           voice = server.voice_id ?? local;
         } catch {}
       }
+      if (!voice) voice = await getPublicSettings().then((s) => s.default_voice_id).catch(() => null);
       if (!alive) return;
-      setVoice(voice ?? DEFAULT_VOICE_ID);
+      setVoice(voice || DEFAULT_VOICE_ID);
       setReady(true);
     })();
     return () => {

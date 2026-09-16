@@ -23,17 +23,20 @@ export default function LandingScreen() {
   useEffect(() => {
     t.value = withRepeat(withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }), -1, true);
   }, [t]);
-  const float = useAnimatedStyle(() => ({ transform: [{ translateY: -6 + t.value * 12 }] }));
-  const halo = useAnimatedStyle(() => ({ opacity: 0.45 + t.value * 0.35, transform: [{ scale: 1 + t.value * 0.08 }] }));
-  const ring = useAnimatedStyle(() => ({ opacity: 0.5 - t.value * 0.3, transform: [{ scale: 1.1 + t.value * 0.25 }] }));
+  const float = useAnimatedStyle(() => ({ transform: [{ translateY: -5 + t.value * 10 }] }));
+  const drift = useAnimatedStyle(() => ({ transform: [{ translateX: -6 + t.value * 12 }] }));
 
   return (
     <Background>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + (wide ? 56 : 36), paddingBottom: insets.bottom + 32 }]}>
         <Animated.View entering={FadeIn.duration(900)} style={styles.hero}>
-          <Animated.View style={[styles.ring, ring]} />
-          <Animated.View style={[styles.halo, halo]} />
-          <Animated.View style={[styles.logoWrap, float]}>
+          <Animated.View style={[styles.cloud, drift]}>
+            <View style={[styles.puff, { width: 78, height: 78, left: 14, top: 44 }]} />
+            <View style={[styles.puff, { width: 108, height: 108, left: 62, top: 12 }]} />
+            <View style={[styles.puff, { width: 86, height: 86, left: 138, top: 38 }]} />
+            <View style={[styles.puff, styles.cloudBase]} />
+          </Animated.View>
+          <Animated.View style={float}>
             <Image source={require("../../../public/chaplin_logo.png")} style={styles.logo} accessibilityLabel="Chaplin AI" />
           </Animated.View>
         </Animated.View>
@@ -84,21 +87,11 @@ export default function LandingScreen() {
 
 const styles = StyleSheet.create({
   scroll: { flexGrow: 1, alignItems: "center", paddingHorizontal: 24, gap: 10 },
-  hero: { width: 168, height: 168, alignItems: "center", justifyContent: "center", marginBottom: 6 },
-  ring: { position: "absolute", width: 150, height: 150, borderRadius: 75, borderWidth: 1.5, borderColor: colors.accent },
-  halo: { position: "absolute", width: 150, height: 150, borderRadius: 75, backgroundColor: colors.blobA },
-  logoWrap: {
-    width: 128,
-    height: 128,
-    borderRadius: 64,
-    backgroundColor: colors.glassStrong,
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    boxShadow: "0 12px 36px rgba(99,91,255,0.22)",
-  },
-  logo: { width: 84, height: 84 },
+  hero: { width: 240, height: 170, alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  cloud: { position: "absolute", width: 240, height: 150, top: 10 },
+  puff: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.92)", boxShadow: "0 14px 34px rgba(99,91,255,0.16)" },
+  cloudBase: { left: 22, top: 74, width: 196, height: 64, borderRadius: 32 },
+  logo: { width: 88, height: 88, marginTop: 10 },
   title: { fontSize: 40, fontWeight: "700", color: colors.text, letterSpacing: -1, fontFamily, textAlign: "center" },
   titleWide: { fontSize: 56 },
   tagline: { fontSize: 22, fontWeight: "600", color: colors.accent, textAlign: "center", fontFamily, marginTop: -2 },

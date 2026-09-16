@@ -29,7 +29,8 @@ export default function VoicePicker() {
   const filtered = q
     ? voices.filter((v) => [v.name, v.description, v.gender].some((s) => (s || "").toLowerCase().includes(q)))
     : voices;
-  const visible = filtered.slice(0, shown);
+  const ordered = [...filtered].sort((a, b) => Number(b.id === voiceId) - Number(a.id === voiceId));
+  const visible = ordered.slice(0, shown);
 
   async function choose(id: string) {
     setError(null);
@@ -144,9 +145,10 @@ const styles = StyleSheet.create({
   more: { alignItems: "center", paddingVertical: 10 },
   moreText: { color: colors.accent, fontWeight: "600", fontSize: 14, fontFamily },
   input: {
-    backgroundColor: colors.glassStrong,
-    borderColor: colors.glassBorder,
-    borderWidth: 1,
+    backgroundColor: colors.white,
+    borderColor: "rgba(30,27,75,0.28)",
+    borderWidth: 1.5,
+    boxShadow: "0 3px 10px rgba(30,27,75,0.14)",
     borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 12,
