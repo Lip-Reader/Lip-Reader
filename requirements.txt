@@ -10,3 +10,4 @@ psycopg[binary]
 langchain-anthropic
 inworld-tts
 httpx
+clerk-backend-api

@@ -3,16 +3,15 @@ from __future__ import annotations
 
 import base64
 import logging
-from typing import Literal
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, db, meta, tts
-from .agent import run_agent
+from . import admin, config, db, meta, tts
+from .auth import optional_user, require_user
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("chaplin.api")
@@ -27,17 +26,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(admin.router)
 
 ARCHITECTURE_PNG = config.REPO_ROOT / "assets" / "architecture.png"
 SPA_DIST = config.REPO_ROOT / "app" / "dist"
 
 
-def _ok(response: str, steps: list[dict]) -> dict:
-    return {"status": "ok", "error": None, "response": response, "steps": steps}
-
-
-def _err(message: str) -> dict:
-    return {"status": "error", "error": message, "response": None, "steps": []}
+def _db(fn, *args):
+    try:
+        return fn(*args)
+    except Exception as e:  # noqa: BLE001
+        log.exception("db failed")
+        raise HTTPException(status_code=503, detail=f"db unavailable: {e}")
 
 
 # --- workshop API ---------------------------------------------------------
@@ -59,101 +59,50 @@ def model_architecture():
     return FileResponse(ARCHITECTURE_PNG, media_type="image/png")
 
 
-class ConversationMessage(BaseModel):
-    role: Literal["self", "other"]
-    content: str
+# --- settings / support / runs (Supabase Postgres) -------------------------
+
+@app.get("/api/settings/public")
+def settings_public():
+    return _db(db.get_app_settings)
 
 
-class ExecuteBody(BaseModel):
-    prompt: str = ""
-    conversation: list[ConversationMessage] = []
+class SettingsBody(BaseModel):
+    voice_id: str
 
 
-@app.post("/api/execute")
-def execute(body: ExecuteBody):
-    text = (body.prompt or "").strip()
+@app.get("/api/me/settings")
+def me_settings(user: dict = Depends(require_user)):
+    return _db(db.get_user_settings, user["id"])
+
+
+@app.put("/api/me/settings")
+def me_settings_put(body: SettingsBody, user: dict = Depends(require_user)):
+    return _db(db.put_user_settings, user["id"], body.voice_id)
+
+
+class SupportBody(BaseModel):
+    message: str
+
+
+@app.post("/api/support")
+def support(body: SupportBody, user: dict | None = Depends(optional_user)):
+    text = body.message.strip()
     if not text:
-        return _err("prompt is required")
-    try:
-        result = run_agent(text, [m.model_dump() for m in body.conversation])
-    except Exception as e:  # noqa: BLE001
-        log.exception("agent failed")
-        return _err(f"agent failed: {e}")
-    return _ok(result["response"], result["steps"])
+        raise HTTPException(status_code=400, detail="message is required")
+    user = user or {}
+    return {"id": _db(db.add_support, user.get("id"), user.get("email"), text[:4000])}
 
 
-# --- chat store (Supabase Postgres, sigma-agent-server shape) ---------------
-
-class CreateChatBody(BaseModel):
-    title: str = "New chat"
-
-
-class AppendMessageBody(BaseModel):
-    role: Literal["self", "other"]
-    content: str
-    steps: list[dict] | None = None
+class RunBody(BaseModel):
+    raw: str
+    corrected: str
+    latency_ms: int | None = None
 
 
-@app.get("/api/chats")
-def chats_list():
-    try:
-        return {"conversations": db.list_conversations()}
-    except Exception as e:  # noqa: BLE001
-        log.exception("list chats failed")
-        raise HTTPException(status_code=503, detail=f"chat store unavailable: {e}")
-
-
-@app.post("/api/chats")
-def chats_create(body: CreateChatBody):
-    try:
-        return db.create_conversation((body.title or "New chat").strip()[:256])
-    except Exception as e:  # noqa: BLE001
-        log.exception("create chat failed")
-        raise HTTPException(status_code=503, detail=f"chat store unavailable: {e}")
-
-
-@app.delete("/api/chats/{chat_id}")
-def chats_delete(chat_id: str):
-    try:
-        found = db.delete_conversation(chat_id)
-        if not found and db.is_preset(chat_id):
-            raise HTTPException(status_code=403, detail="preset chats cannot be deleted")
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        log.exception("delete chat failed")
-        raise HTTPException(status_code=503, detail=f"chat store unavailable: {e}")
-    if not found:
-        raise HTTPException(status_code=404, detail="chat not found")
-    return {"deleted": chat_id}
-
-
-@app.get("/api/chats/{chat_id}/messages")
-def chats_messages(chat_id: str):
-    try:
-        return {"messages": db.get_messages(chat_id)}
-    except Exception as e:  # noqa: BLE001
-        log.exception("get messages failed")
-        raise HTTPException(status_code=503, detail=f"chat store unavailable: {e}")
-
-
-@app.post("/api/chats/{chat_id}/messages")
-def chats_append(chat_id: str, body: AppendMessageBody):
-    text = body.content.strip()
-    if not text:
-        raise HTTPException(status_code=400, detail="content is required")
-    try:
-        msg = db.append_message(chat_id, body.role, text, body.steps)
-        if msg is None and db.is_preset(chat_id):
-            raise HTTPException(status_code=403, detail="preset chats are read-only")
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001
-        log.exception("append message failed")
-        raise HTTPException(status_code=503, detail=f"chat store unavailable: {e}")
-    if msg is None:
-        raise HTTPException(status_code=404, detail="chat not found")
-    return msg
+@app.post("/api/runs")
+def runs(body: RunBody, user: dict | None = Depends(optional_user)):
+    user_id = (user or {}).get("id")
+    return {"id": _db(db.add_run, user_id, body.raw, body.corrected, body.latency_ms)}
 
 
 @app.get("/api/db_ping")
@@ -229,4 +178,4 @@ if SPA_DIST.is_dir():
 else:
     @app.get("/")
     def root():
-        return {"detail": "SPA not built - run `npm run build` in app/ (dev server: npm run dev)"}
+        return {"detail": "SPA not built - run `npx expo export -p web` in app/ (dev server: npx expo start --web)"}

@@ -24,6 +24,7 @@ dependencies = [
     "python-multipart",
     "httpx",
     "modal",
+    "clerk-backend-api>=7.0.0",
 ]
 
 [project.optional-dependencies]
