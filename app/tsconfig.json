@@ -2,7 +2,21 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "moduleSuffixes": [".web", ""]
+    "moduleSuffixes": [
+      ".web",
+      ""
+    ]
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "e2e",
+    "playwright.config.ts",
+    "dist"
+  ]
 }

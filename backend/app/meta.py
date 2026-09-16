@@ -63,10 +63,11 @@ AGENT_INFO = {
         "template": (
             "Send the raw lip-read transcription as the prompt, ideally in all-caps, "
             "e.g. \"IM SO EXCITED TO ME YOU TODAY\". The agent returns the corrected "
-            "sentence. Any noisy English sentence works — POST /api/execute with "
-            "{\"prompt\": \"<RAW TRANSCRIPTION>\"}. Optionally add \"conversation\": "
-            "[{\"role\": \"self\"|\"other\", \"content\": \"...\"}] — the chat so far; "
-            "it's used to fix words that don't fit the context."
+            "sentence. POST /api/execute_lips with a short mp4/webm clip of the "
+            "speaker; the `vsr` step transcribes it and the `correct` step returns "
+            "the corrected sentence. An optional `conversation` form field "
+            "([{\"role\": \"self\"|\"other\", \"content\": \"...\"}]) supplies the chat so "
+            "far and is used to fix words that don't fit the context."
         )
     },
     "prompt_examples": [

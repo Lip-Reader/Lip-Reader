@@ -20,13 +20,7 @@ export const colors = {
 
 export const radius = { sm: 12, md: 18, lg: 28, pill: 999 };
 
-export const shadow = {
-  shadowColor: "#635BFF",
-  shadowOpacity: 0.14,
-  shadowRadius: 28,
-  shadowOffset: { width: 0, height: 8 },
-  elevation: 6,
-};
+export const shadow = { boxShadow: "0 8px 28px rgba(99,91,255,0.14)" };
 
 export const fontFamily = Platform.select({ web: "Inter, system-ui, -apple-system, sans-serif", default: undefined });
 

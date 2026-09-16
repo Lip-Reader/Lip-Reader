@@ -6,6 +6,12 @@ app/.env
 .claude
 .pytest_cache
 app/node_modules
+app/.env.local
+app/e2e
+app/playwright.config.ts
+app/screenshots
+app/test-results
+app/.expo
 
 # Local/uv dependency manifests list torch etc. — Vercel must resolve deps
 # from requirements.txt instead, or the function blows the 500MB limit.
@@ -29,6 +35,5 @@ assets/sravi_test_videos
 assets/test_videos
 assets/chaplin_ai.pptx
 project_requierments.pdf
-plan-to-implement.md
 *.mp4
 *.mov

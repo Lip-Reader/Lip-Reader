@@ -9,7 +9,9 @@
     "ios": "expo start --ios",
     "android": "expo start --android",
     "build": "expo export -p web",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.native.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.native.json",
+    "e2e": "playwright test --project=guest --project=admin",
+    "shots": "playwright test --project=shots"
   },
   "dependencies": {
     "@clerk/expo": "^4.6.8",
@@ -36,6 +38,7 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/react": "~19.2.2",
     "typescript": "~6.0.3"
   }

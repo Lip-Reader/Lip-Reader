@@ -25,7 +25,7 @@ export default function LandingScreen() {
     glow.value = withRepeat(withTiming(1, { duration: 1600 }), -1, true);
   }, [glow]);
   const glowStyle = useAnimatedStyle(() => ({
-    opacity: 0.35 + glow.value * 0.3,
+    opacity: 0.25 + glow.value * 0.25,
     transform: [{ scale: 1 + glow.value * 0.12 }],
   }));
 
@@ -83,7 +83,7 @@ export default function LandingScreen() {
 const styles = StyleSheet.create({
   scroll: { flexGrow: 1, alignItems: "center", paddingHorizontal: 24, gap: 14 },
   logoWrap: { width: 120, height: 120, alignItems: "center", justifyContent: "center" },
-  glow: { position: "absolute", width: 140, height: 140, borderRadius: 70, backgroundColor: colors.accent },
+  glow: { position: "absolute", width: 150, height: 150, borderRadius: 75, backgroundColor: colors.blobA },
   logo: { width: 96, height: 96 },
   title: { fontSize: 38, fontWeight: "700", color: colors.text, letterSpacing: -0.8, fontFamily, textAlign: "center" },
   tagline: { fontSize: 19, color: colors.text, textAlign: "center", maxWidth: 560, lineHeight: 28, fontFamily, fontWeight: "500" },

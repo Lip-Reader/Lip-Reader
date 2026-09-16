@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
   smallButtonText: { fontSize: 13, fontWeight: "600", color: colors.text, fontFamily },
   row: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "rgba(107,106,138,0.14)" },
   rowHead: { borderBottomColor: "rgba(107,106,138,0.3)" },
-  cell: { flex: 1, minWidth: 130, paddingVertical: 10, paddingHorizontal: 8, justifyContent: "center" },
+  cell: { flex: 1, minWidth: 170, paddingVertical: 10, paddingHorizontal: 8, justifyContent: "center" },
   cellHead: { fontSize: 12, fontWeight: "600", color: colors.muted, textTransform: "uppercase", letterSpacing: 0.4, fontFamily },
   cellText: { fontSize: 14, color: colors.text, fontFamily },
   error: { color: colors.danger, fontSize: 14, fontFamily },

@@ -65,7 +65,7 @@ export default function VoicePicker() {
               {filtered.map((v) => {
                 const active = v.id === voiceId;
                 return (
-                  <Pressable key={v.id} onPress={() => choose(v.id)} style={[styles.voice, active && styles.voiceActive]} accessibilityRole="radio" accessibilityState={{ selected: active }}>
+                  <Pressable key={v.id} onPress={() => choose(v.id)} style={[styles.voice, active && styles.voiceActive]} accessibilityRole="radio" aria-checked={active}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.voiceName}>{v.name}</Text>
                       {!!v.description && <Text style={styles.voiceDesc}>{v.description}</Text>}
