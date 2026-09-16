@@ -42,11 +42,14 @@ def get_model():
     return _model
 
 
-def transcribe_clip(video_path: str) -> str:
-    """Returns the raw all-caps transcription; raises NoFaceError/NoSpeechError."""
+def transcribe_clip(video) -> str:
+    """`video` is a path or a (T, H, W, 3) RGB uint8 array.
+    Returns the raw all-caps transcription; raises NoFaceError/NoSpeechError."""
     model = get_model()
+    if not isinstance(video, str) and len(video) == 0:
+        raise NoFaceError("empty clip")
     try:
-        text = model(video_path)
+        text = model(video)
     except AssertionError as e:  # mediapipe: no face found
         raise NoFaceError(str(e)) from e
     text = (text or "").strip()

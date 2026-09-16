@@ -58,6 +58,8 @@ class AVSRDataLoader:
 
 
     def load_video(self, data_filename):
+        if not isinstance(data_filename, str):
+            return data_filename  # frames already decoded by the caller
         return read_video_frames(data_filename)
 
 

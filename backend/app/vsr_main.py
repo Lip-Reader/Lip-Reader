@@ -38,23 +38,43 @@ app.add_middleware(
 )
 
 
-def _normalize_clip(src: str) -> str:
-    """Re-encode a browser clip to 16fps h264 mp4; VSR cost scales with frame count."""
-    dst = src + ".norm.mp4"
+FRAME_SIZE = 640  # longest side after downscale; face detection cost scales with pixels
+MODEL_FPS = 25    # what the VSR model was trained on
+
+
+def _decode_clip(src: str) -> "np.ndarray":
+    """Decode a browser clip straight into (T, H, W, 3) RGB frames at 25 fps, downscaled
+    and letterboxed to FRAME_SIZE x FRAME_SIZE: one ffmpeg pass, no re-encode, no second file."""
+    import numpy as np
+
+    vf = (
+        f"fps={MODEL_FPS},"
+        f"scale={FRAME_SIZE}:{FRAME_SIZE}:force_original_aspect_ratio=decrease,"
+        f"pad={FRAME_SIZE}:{FRAME_SIZE}:(ow-iw)/2:(oh-ih)/2"
+    )
     try:
         proc = subprocess.run(
-            ["ffmpeg", "-y", "-loglevel", "error", "-i", src,
-             "-vf", "fps=16", "-an", "-c:v", "libx264", "-preset", "ultrafast", dst],
+            ["ffmpeg", "-loglevel", "error", "-i", src, "-vf", vf, "-an",
+             "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
             capture_output=True, timeout=60,
         )
-        if proc.returncode == 0 and os.path.getsize(dst) > 0:
-            return dst
-        log.warning("clip normalization failed, using original: %s", proc.stderr.decode(errors="replace"))
+        n = len(proc.stdout) // (FRAME_SIZE * FRAME_SIZE * 3)
+        if proc.returncode == 0 and n > 0:
+            return np.frombuffer(proc.stdout, np.uint8)[: n * FRAME_SIZE * FRAME_SIZE * 3].reshape(
+                n, FRAME_SIZE, FRAME_SIZE, 3
+            )
+        log.warning("ffmpeg decode failed, falling back to OpenCV: %s", proc.stderr.decode(errors="replace"))
     except (OSError, subprocess.TimeoutExpired) as e:
-        log.warning("ffmpeg unavailable, using original clip: %s", e)
-    if os.path.exists(dst):
-        os.remove(dst)
-    return src
+        log.warning("ffmpeg unavailable, falling back to OpenCV: %s", e)
+    import cv2
+    from pipelines.video_io import read_video_frames
+
+    frames = read_video_frames(src)
+    if len(frames) and max(frames.shape[1:3]) > FRAME_SIZE:
+        k = FRAME_SIZE / max(frames.shape[1:3])
+        size = (int(frames.shape[2] * k) // 2 * 2, int(frames.shape[1] * k) // 2 * 2)
+        frames = np.stack([cv2.resize(f, size, interpolation=cv2.INTER_AREA) for f in frames])
+    return frames
 
 
 def _ok(response: str, steps: list[dict]) -> dict:
@@ -97,13 +117,12 @@ def execute_lips(file: UploadFile = File(...), conversation: str | None = Form(N
         file.filename or ""
     ).endswith(".webm") else ".mp4"
     fd, path = tempfile.mkstemp(suffix=suffix)
-    norm_path = path
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(file.file.read())
-        norm_path = _normalize_clip(path)
+        frames = _decode_clip(path)
         try:
-            raw = vsr.transcribe_clip(norm_path)
+            raw = vsr.transcribe_clip(frames)
         except vsr.NoFaceError:
             return _err("No face detected in the clip. Please try again.")
         except vsr.NoSpeechError:
@@ -120,6 +139,5 @@ def execute_lips(file: UploadFile = File(...), conversation: str | None = Form(N
         return _err(f"lip-reading failed: {e}")
     finally:
         # privacy: never persist video
-        for p in {path, norm_path}:
-            if os.path.exists(p):
-                os.remove(p)
+        if os.path.exists(path):
+            os.remove(path)

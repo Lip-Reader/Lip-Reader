@@ -16,7 +16,7 @@ class LandmarksDetector:
         self.full_range_detector = self.mp_face_detection.FaceDetection(min_detection_confidence=0.5, model_selection=1)
 
     def __call__(self, filename):
-        video_frames = read_video_frames(filename)
+        video_frames = filename if isinstance(filename, np.ndarray) else read_video_frames(filename)
         landmarks = self.detect(video_frames, self.full_range_detector)
         if all(element is None for element in landmarks):
             landmarks = self.detect(video_frames, self.short_range_detector)
