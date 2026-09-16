@@ -24,7 +24,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     let alive = true;
     setError(null);
     navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: "user", width: 1280, height: 720 }, audio: true })
+      .getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 25 } }, audio: true })
       .then((stream) => {
         if (!alive) return stream.getTracks().forEach((t) => t.stop());
         streamRef.current = stream;

@@ -65,6 +65,7 @@ export function CameraPreview() {
       style={StyleSheet.absoluteFill}
       facing="front"
       mode="video"
+      videoQuality="480p"
       mirror={false}
       onCameraReady={ctx.onReady}
     />
