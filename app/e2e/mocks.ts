@@ -12,6 +12,12 @@ export async function mockBackend(page: Page, opts: { admin?: boolean } = {}) {
         voices: [
           { id: "Brian", name: "Brian", description: "Warm male voice", gender: "male" },
           { id: "Ashley", name: "Ashley", description: "Clear female voice", gender: "female" },
+          { id: "Noah", name: "Noah", description: "Calm and steady", gender: "male" },
+          { id: "Mia", name: "Mia", description: "Bright and friendly", gender: "female" },
+          { id: "Liam", name: "Liam", description: "Deep narrator", gender: "male" },
+          { id: "Emma", name: "Emma", description: "Soft and gentle", gender: "female" },
+          { id: "Oliver", name: "Oliver", description: "British accent", gender: "male" },
+          { id: "Sophia", name: "Sophia", description: "Warm storyteller", gender: "female" },
         ],
       },
     })

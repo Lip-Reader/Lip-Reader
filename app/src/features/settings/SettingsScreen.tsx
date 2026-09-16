@@ -20,7 +20,7 @@ export default function SettingsScreen() {
     try {
       await sendSupport(await session.getToken(), message.trim());
       setMessage("");
-      setSent("Thanks, your message was sent.");
+      setSent("Thanks, your message was sent 💜");
     } catch {
       setSent("Couldn't send right now. Try again later.");
     }
@@ -34,11 +34,11 @@ export default function SettingsScreen() {
           <Title>Settings</Title>
         </View>
 
-        <Section title="Voice" hint="This is how Chaplin will speak for you.">
+        <Section title="🎙️ Voice" hint="This is how Chaplin will speak for you.">
           <VoicePicker />
         </Section>
 
-        <Section title="Account">
+        <Section title="👤 Account">
           {session.signedIn ? (
             <>
               <Body>{session.email}</Body>
@@ -46,17 +46,17 @@ export default function SettingsScreen() {
             </>
           ) : (
             <>
-              <Body muted>{session.enabled ? "Sign in to keep your settings on every device." : "Settings are saved on this device."}</Body>
+              <Body muted>{session.enabled ? "Sign in to keep your voice on every device ☁️" : "Settings are saved on this device 📱"}</Body>
               {session.enabled && <GlassButton label="Sign in" variant="primary" onPress={() => router.push("/sign-in")} testID="signin-button" />}
             </>
           )}
         </Section>
 
-        <Section title="Feedback">
+        <Section title="💬 Feedback">
           <TextInput
             value={message}
             onChangeText={setMessage}
-            placeholder="Tell us what would help"
+            placeholder="Tell us what would help 🙌"
             placeholderTextColor={colors.muted}
             multiline
             style={styles.textarea}

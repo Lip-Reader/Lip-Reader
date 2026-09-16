@@ -52,3 +52,10 @@ test("admin route is locked for signed-out visitors", async ({ page }) => {
   await expect(page.getByText(/Sign in to continue|Admin is unavailable/)).toBeVisible();
   expect(adminCalls).toHaveLength(0);
 });
+
+test("voice list shows five voices, then more on demand", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.getByRole("radio")).toHaveCount(5);
+  await page.getByRole("button", { name: /Show more/ }).click();
+  await expect(page.getByRole("radio")).toHaveCount(8);
+});

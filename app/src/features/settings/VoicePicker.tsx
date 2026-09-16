@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { enrollVoice, getVoices, selectVoice, Voice } from "../../lib/api";
 import { GlassButton } from "../../ui";
 import { colors, fontFamily, radius } from "../../ui/theme";
 import { CameraPreview, RecorderProvider, useRecorder } from "../talk/recorder";
 import { useSettings } from "./settingsStore";
+
+const PAGE = 5;
 
 export default function VoicePicker() {
   const { voiceId, setVoiceId } = useSettings();
@@ -14,6 +16,7 @@ export default function VoicePicker() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [shown, setShown] = useState(PAGE);
 
   useEffect(() => {
     getVoices()
@@ -26,6 +29,7 @@ export default function VoicePicker() {
   const filtered = q
     ? voices.filter((v) => [v.name, v.description, v.gender].some((s) => (s || "").toLowerCase().includes(q)))
     : voices;
+  const visible = filtered.slice(0, shown);
 
   async function choose(id: string) {
     setError(null);
@@ -42,7 +46,7 @@ export default function VoicePicker() {
       <View style={styles.tabs}>
         {(["preset", "record"] as const).map((t) => (
           <Pressable key={t} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]} accessibilityRole="tab">
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t === "preset" ? "Voices" : "Record my voice"}</Text>
+            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t === "preset" ? "🎭 Voices" : "🎤 Record my voice"}</Text>
           </Pressable>
         ))}
       </View>
@@ -52,7 +56,10 @@ export default function VoicePicker() {
         <>
           <TextInput
             value={query}
-            onChangeText={setQuery}
+            onChangeText={(v) => {
+              setQuery(v);
+              setShown(PAGE);
+            }}
             placeholder="Search voices"
             placeholderTextColor={colors.muted}
             style={styles.input}
@@ -61,8 +68,8 @@ export default function VoicePicker() {
           {loading ? (
             <ActivityIndicator color={colors.accent} style={{ marginVertical: 20 }} />
           ) : (
-            <View style={{ gap: 8 }}>
-              {filtered.map((v) => {
+            <ScrollView style={styles.list} contentContainerStyle={{ gap: 8 }} nestedScrollEnabled>
+              {visible.map((v) => {
                 const active = v.id === voiceId;
                 return (
                   <Pressable key={v.id} onPress={() => choose(v.id)} style={[styles.voice, active && styles.voiceActive]} accessibilityRole="radio" aria-checked={active}>
@@ -75,7 +82,12 @@ export default function VoicePicker() {
                 );
               })}
               {filtered.length === 0 && <Text style={styles.voiceDesc}>No voices match.</Text>}
-            </View>
+              {filtered.length > shown && (
+                <Pressable onPress={() => setShown((n) => n + PAGE)} style={styles.more} accessibilityRole="button">
+                  <Text style={styles.moreText}>Show more ({filtered.length - shown}) ▾</Text>
+                </Pressable>
+              )}
+            </ScrollView>
           )}
         </>
       ) : (
@@ -125,9 +137,12 @@ function RecordVoice({ onDone }: { onDone: (id: string) => Promise<void> }) {
 const styles = StyleSheet.create({
   tabs: { flexDirection: "row", backgroundColor: "rgba(255,255,255,0.5)", borderRadius: radius.pill, padding: 4 },
   tab: { flex: 1, paddingVertical: 9, borderRadius: radius.pill, alignItems: "center" },
-  tabActive: { backgroundColor: colors.white },
+  tabActive: { backgroundColor: colors.text },
   tabText: { color: colors.muted, fontWeight: "600", fontSize: 14, fontFamily },
-  tabTextActive: { color: colors.text },
+  tabTextActive: { color: colors.white },
+  list: { maxHeight: 330 },
+  more: { alignItems: "center", paddingVertical: 10 },
+  moreText: { color: colors.accent, fontWeight: "600", fontSize: 14, fontFamily },
   input: {
     backgroundColor: colors.glassStrong,
     borderColor: colors.glassBorder,
