@@ -5,7 +5,7 @@ pydantic
 python-dotenv
 python-multipart
 anthropic
-langgraph
+langchain
 psycopg[binary]
 langchain-anthropic
 inworld-tts

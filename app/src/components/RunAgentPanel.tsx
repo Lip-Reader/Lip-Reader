@@ -210,11 +210,6 @@ export default function RunAgentPanel({ onClose }: { onClose: () => void }) {
 
               <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-400">
                 Steps trace · {result.steps.length} calls
-                {mode === "presets" && result.steps.length >= 3 && (
-                  <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-600">
-                    reflect revised via the conversation
-                  </span>
-                )}
               </div>
               <div className="mt-1.5">
                 <StepsTrace steps={result.steps} />

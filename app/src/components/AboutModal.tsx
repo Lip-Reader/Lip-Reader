@@ -34,12 +34,11 @@ export default function AboutModal({ onClose }: { onClose: () => void }) {
             </div>
             <p className="mt-1">
               A webcam clip is transcribed by the <Chip c="amber">vsr</Chip> model
-              (Auto-AVSR). A LangGraph <em>reflection</em> agent then corrects the noisy
-              transcription: <Chip c="violet">generate</Chip> proposes a corrected sentence
-              without seeing the chat, and <Chip c="sky">reflect</Chip> reviews it against
-              the conversation history — when a word doesn't fit the chat context it
-              requests one revision — before returning the final response with a full
-              steps trace.
+              (Auto-AVSR). A single <Chip c="violet">correct</Chip> LLM call then turns the
+              noisy transcription into a natural, punctuated sentence — using the
+              conversation history to pick between visually similar words when one fits
+              the context better — before returning the final response with a full steps
+              trace.
             </p>
             <img
               src={architectureUrl}

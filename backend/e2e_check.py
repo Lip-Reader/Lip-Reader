@@ -110,7 +110,7 @@ def main() -> int:
     steps_ok = (
         body.get("steps")
         and all({"module", "prompt", "response"} <= set(s) for s in body["steps"])
-        and {s["module"] for s in body["steps"]} <= {"generate", "reflect"}
+        and {s["module"] for s in body["steps"]} <= {"correct"}
     )
     ok["execute"] = r.status_code == 200 and body.get("status") == "ok" and bool(body.get("response")) and bool(steps_ok)
     print(f"status: {r.status_code}  latency: {dt:.1f}s")
@@ -123,7 +123,7 @@ def main() -> int:
         ok["execute"] = False
         print("ERROR-shape check failed:", err)
 
-    step("6/9  POST /api/execute (with conversation - contextual revise)")
+    step("6/9  POST /api/execute (with conversation - contextual correction)")
     conversation = [
         {"role": "other", "content": "The nurse has your evening medication ready."},
         {"role": "self", "content": "Thank you, I was waiting for it."},
@@ -133,20 +133,16 @@ def main() -> int:
     dt = time.time() - t0
     body = r.json() if r.status_code == 200 else {}
     modules = [s["module"] for s in body.get("steps", [])]
-    verdicts = [s["response"].get("verdict") for s in body.get("steps", []) if s["module"] == "reflect"]
-    first_gen_stateless = bool(body.get("steps")) and "Conversation" not in body["steps"][0]["prompt"]["input"]
     ok["execute_conv"] = (
         r.status_code == 200
         and body.get("status") == "ok"
-        and modules == ["generate", "reflect", "generate"]
+        and modules == ["correct"]
         and "pill" in (body.get("response") or "").lower()
-        and first_gen_stateless
     )
     print(f"status: {r.status_code}  latency: {dt:.1f}s")
     print("prompt   : 'WHERES MY BILL'  context: nurse/medication")
     print(f"response : {body.get('response')!r}")
-    print(f"steps    : {modules}  verdicts: {verdicts}")
-    print(f"first generate stateless: {first_gen_stateless}")
+    print(f"steps    : {modules}")
 
     step("7/9  POST /api/execute_lips (vsr_lip_reader service)")
     vsr_client = TestClient(vsr_app)

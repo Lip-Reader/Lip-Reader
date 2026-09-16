@@ -13,8 +13,7 @@ asserting a wrong sentence.
 webcam ─▶ short mp4 clip ─▶ vsr (Auto-AVSR lip-reading)
                                         │
                                         ▼
-              LangGraph reflection agent: generate ─▶ reflect ─▶ (revise once | return)
-                       (stateless)           ▲ chat history (last 10 msgs)
+                  single-pass corrector agent: correct (sees chat history)
                                         │
                                         ▼
                 on-screen text + steps trace  +  optional TTS voice clone
@@ -23,13 +22,12 @@ webcam ─▶ short mp4 clip ─▶ vsr (Auto-AVSR lip-reading)
   (`backend/app/db.py`, sigma-agent-server-style `chat_memory`/`chat_messages`
   + last-10 window) behind `/api/chats`; `app/src/lib/chat.ts` is the API
   client. `/api/execute` and `/api/execute_lips` take an optional
-  `conversation` history; the first generate pass never sees it — only reflect
-  and the revision pass do. `GET /api/db_ping` (SELECT 1) is hit every 5 min
-  by `.github/workflows/db-keepalive.yml` so the free-tier DB never pauses.
-  Six demo presets (noisy sentence as title + one other-message) are seeded by
-  the DDL in `db.py` with `is_preset = TRUE` — delete/append return 403; the
-  Run Agent modal offers "Demo presets" (2 revise via context, 4 approve) vs
-  "Free text" (optional chat) modes.
+  `conversation` history that the `correct` call always sees. `GET /api/db_ping`
+  (SELECT 1) is hit every 5 min by `.github/workflows/db-keepalive.yml` so the
+  free-tier DB never pauses. Six demo presets (noisy sentence as title + one
+  other-message) are seeded by the DDL in `db.py` with `is_preset = TRUE` —
+  delete/append return 403; the Run Agent modal offers "Demo presets" (2 need
+  context, 4 don't) vs "Free text" (optional chat) modes.
 - Three services:
   1. **SPA** (`app/`) — static, on Vercel.
   2. **API backend** (`backend/app/main.py`, FastAPI) — `/api/team_info`,
@@ -39,8 +37,8 @@ webcam ─▶ short mp4 clip ─▶ vsr (Auto-AVSR lip-reading)
   3. **vsr_lip_reader service** (`backend/app/vsr_main.py`, FastAPI) —
      `POST /api/execute_lips` + `/health` only (VSR → agent, GPU). On Modal
      (`modal_app.py`), local dev port 8001 (launch config `chaplin-vsr`).
-- LangGraph agent: `backend/app/agent/` — `graph.py` (generate → reflect, max 1
-  revision), `prompts.py` (all node prompts), `model.py` (ChatAnthropic + structured output).
+- Agent: `backend/app/agent/` — `agent.py` (LangChain `create_agent`, single
+  `correct` call, ChatAnthropic), `prompts.py` (the corrector's system prompt).
 - React SPA: `app/`. The browser owns the camera (getUserMedia/MediaRecorder).
   "Run Agent" panel = text entry to the agent; About modal explains the system.
 - VSR model: `backend/pipelines/`

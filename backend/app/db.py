@@ -38,9 +38,8 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id
 
 -- Preset demo conversations (is_preset = TRUE -> protected from delete/append).
 -- The description IS the noisy sentence to correct; each preset carries one
--- other-person message. Presets 1-2 are only correctable via that context
--- (the context-free generate fails, reflect revises); presets 3-6 are
--- correctable by generate alone (reflect approves). Self-healing: rows are
+-- other-person message. Presets 1-2 need that context to resolve correctly;
+-- presets 3-6 are correctable from the sentence alone. Self-healing: rows are
 -- upserted and stale preset messages replaced, so editing this seed list is
 -- enough to change the presets everywhere.
 INSERT INTO chat_memory (conversation_id, description, is_preset) VALUES
