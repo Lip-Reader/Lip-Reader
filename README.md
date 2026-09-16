@@ -2,26 +2,23 @@
 
 Chaplin AI helps non-vocal, ventilated patients communicate. The user taps **Talk**,
 silently mouths a sentence to the camera, and Chaplin lip-reads it, corrects it with
-a LangGraph reflection agent, shows one clean line of text, and — on **Speak** —
-voices it back in the user's chosen voice. A **Run Agent** panel also accepts plain
-text input (presets or free text), so the agent can be exercised without a camera.
+a single LLM call, shows one clean line of text, and — on **Speak** — voices it back
+in the user's chosen voice. A **Run Agent** panel also accepts plain text input
+(presets or free text), so the agent can be exercised without a camera.
 
 A **Chat** lets the user hold a conversation with a second character: messages from
 the other person are typed in, predictions become the user's own messages, and the
-last 10 messages act as the agent's short-term memory. The first `generate` pass is
-deliberately **stateless** — only `reflect` (and the single revision pass) sees the
-conversation, so it can catch corrections that read well in isolation but are wrong
-in context (e.g. "Where's my bill?" → "Where's my pill?" after a nurse mentioned
-medication). Chats persist in Supabase Postgres (sigma-style `chat_memory` +
-`chat_messages` tables) behind `/api/chats`; a scheduled job pings `/api/db_ping`
-every 5 minutes so the free-tier database never pauses.
+last 10 messages are passed to the corrector as short-term memory, so it can pick a
+visually similar word when one fits the conversation better (e.g. "Where's my bill?"
+→ "Where's my pill?" after a nurse mentioned medication). Chats persist in Supabase
+Postgres (sigma-style `chat_memory` + `chat_messages` tables) behind `/api/chats`; a
+scheduled job pings `/api/db_ping` every 5 minutes so the free-tier database never
+pauses.
 
 ```
-webcam clip ─▶ vsr (Auto-AVSR) ─▶ generate ─▶ reflect ─▶ response + steps ─▶ GUI / TTS
-                                      ▲           │  ▲
-                                      └─ revise ──┘  └── chat history (last 10)
-                                       (max 1 loop,
-                                        history + feedback)
+webcam clip ─▶ vsr (Auto-AVSR) ─▶ correct ─▶ response + steps ─▶ GUI / TTS
+                                      ▲
+                                      └── chat history (last 10)
 ```
 
 ## Architecture (monorepo)
@@ -29,7 +26,7 @@ webcam clip ─▶ vsr (Auto-AVSR) ─▶ generate ─▶ reflect ─▶ respons
 | Path        | What it is                                                                 |
 |-------------|----------------------------------------------------------------------------|
 | `backend/`  | FastAPI service (`backend/app/`) + vendored VSR internals (`backend/pipelines/`, `backend/espnet/` — upstream, not rewritten). |
-| `backend/app/agent/` | LangGraph reflection agent: `graph.py` (generate → reflect → revise once), `prompts.py`, `model.py`. |
+| `backend/app/agent/` | Single-pass corrector agent (LangChain `create_agent`): `agent.py`, `prompts.py`. |
 | `app/`      | React + TypeScript + Vite SPA. The browser owns the camera; the built SPA is served by the backend at `/`. |
 | `assets/`   | Brand images, VSR config, test-video ground truths, presentation, `architecture.png`. |
 | `tests/`    | Eval suite (word-overlap F1) for the full clip → agent path. |
@@ -54,7 +51,7 @@ device (chat text is stored in the Supabase chat store).
 | `GET  /health`               | liveness                                                           |
 
 `steps` lists every model call in order as `{ module, prompt, response }`, with
-module names (`vsr`, `generate`, `reflect`) matching `assets/architecture.png`.
+module names (`vsr`, `correct`) matching `assets/architecture.png`.
 `conversation` is an optional `[{ "role": "self"|"other", "content": "..." }]`
 history window (the client sends the active chat's last 10 messages).
 

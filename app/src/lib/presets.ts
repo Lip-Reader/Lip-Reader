@@ -19,8 +19,8 @@ function preset(n: number, title: string, otherMessage: string): DemoPreset {
   };
 }
 
-// 1-2 are only correctable via the context (reflect revises); 3-6 are
-// correctable by generate alone (reflect approves).
+// 1-2 need the conversation to resolve correctly; 3-6 are correctable from
+// the sentence alone.
 export const DEMO_PRESETS: DemoPreset[] = [
   preset(1, "LEGNOP JALES", "Who is your favorite NBA player?"),
   preset(2, "WHERES MY BILL", "The nurse has your evening medication ready."),

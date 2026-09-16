@@ -125,7 +125,7 @@ skip_reason = (
 @pytest.mark.parametrize("video_path,expected", ALL_CASES)
 def test_video(video_path, expected, pipeline, llm_client, results_collector):
     """Test a single video through the full pipeline."""
-    from backend.app.agent.prompts import GENERATE_SYSTEM_PROMPT as LLM_SYSTEM_PROMPT
+    from backend.app.agent.prompts import SYSTEM_PROMPT as LLM_SYSTEM_PROMPT
 
     if not os.path.isfile(video_path):
         pytest.skip(f"Video not found: {video_path}")

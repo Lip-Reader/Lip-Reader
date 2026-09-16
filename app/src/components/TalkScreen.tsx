@@ -262,7 +262,7 @@ export default function TalkScreen({ onChangeVoice }: { onChangeVoice: () => voi
                     base={1.5}
                     segments={[
                       { text: "corrects", className: "font-semibold text-indigo-600" },
-                      { text: "the noisy transcription with a reflection agent," },
+                      { text: "the noisy transcription with an AI language model," },
                     ]}
                   />
                 </TimelineChip>

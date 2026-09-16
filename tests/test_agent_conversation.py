@@ -1,8 +1,8 @@
-"""Agent-level tests for conversation-aware reflection (autonomy).
+"""Agent-level tests for conversation-aware correction.
 
-The first generate pass is stateless; reflect sees the conversation history and
-must revise context-implausible words to visually similar ones - and must NOT
-over-revise corrections that already fit.
+The agent is a single LLM call that always sees the recent conversation (when
+given), so a context-implausible word must be fixed to a visually similar one
+on that one call - and a correction that already fits must not be second-guessed.
 """
 
 import os
@@ -22,33 +22,22 @@ pytestmark = pytest.mark.skipif(
 
 
 class TestNoConversation:
-    """Without history the behavior matches the pre-chat agent."""
-
-    def test_normal_sentences_approve_first_pass(self):
-        sentences = [
+    def test_normal_sentences(self):
+        for raw in [
             "I NEED MY BEDICINE NOW",
             "IM SO EXCITED TO ME YOU TODAY",
             "CAN YOU TURN OF THE LIGHT PLEASE",
-        ]
-        approved = 0
-        for raw in sentences:
+        ]:
             result = run_agent(raw)
-            modules = [s["module"] for s in result["steps"]]
-            assert modules[0] == "generate"
+            assert [s["module"] for s in result["steps"]] == ["correct"]
             assert result["response"][-1] in ".?!"
-            if modules == ["generate", "reflect"]:
-                approved += 1
-        # no over-revision: the common path stays 2 LLM calls
-        assert approved >= 2, f"only {approved}/3 approved on first pass"
 
     def test_correction_quality(self):
         result = run_agent("I NEED MY BEDICINE NOW")
         assert "medicine" in result["response"].lower()
 
 
-class TestConversationRevise:
-    """Context-free correction is plausible but wrong; reflect must fix it."""
-
+class TestConversationContext:
     @pytest.mark.parametrize(
         "raw,conversation,expected_word",
         [
@@ -67,49 +56,28 @@ class TestConversationRevise:
             ),
         ],
     )
-    def test_contextual_revise(self, raw, conversation, expected_word):
+    def test_contextual_correction(self, raw, conversation, expected_word):
         result = run_agent(raw, conversation)
-        modules = [s["module"] for s in result["steps"]]
-        assert modules == ["generate", "reflect", "generate"], (
-            f"expected a revise loop, got {modules}: {result['response']!r}"
-        )
+        assert [s["module"] for s in result["steps"]] == ["correct"]
         assert expected_word in result["response"].lower()
 
-    def test_context_that_fits_approves(self):
-        # the correction already fits the conversation -> reflect must approve
+    def test_context_that_fits_is_left_alone(self):
         result = run_agent(
             "WHERES MY BILL",
             [{"role": "other", "content": "The electricity invoice arrived in the mail."}],
         )
-        modules = [s["module"] for s in result["steps"]]
-        assert modules == ["generate", "reflect"]
         assert "bill" in result["response"].lower()
 
 
-class TestStatelessFirstGenerate:
-    def test_history_never_leaks_into_first_generate(self):
-        conversation = [
-            {"role": "other", "content": "The nurse has your evening medication ready."}
-        ]
-        result = run_agent("WHERES MY BILL", conversation)
-        steps = result["steps"]
-        first_generate = steps[0]
-        assert first_generate["module"] == "generate"
-        assert "medication" not in first_generate["prompt"]["input"]
-        assert "Conversation" not in first_generate["prompt"]["input"]
-        # reflect DOES see the transcript
-        reflect = steps[1]
-        assert reflect["module"] == "reflect"
-        assert "medication" in reflect["prompt"]["input"]
-
+class TestHistoryFiltering:
     def test_window_and_role_filtering(self):
         # >10 messages are clamped, junk roles dropped, without errors
         conversation = [
             {"role": "other", "content": f"filler message {i}"} for i in range(12)
         ] + [{"role": "narrator", "content": "ignored"}, {"role": "self", "content": "  "}]
         result = run_agent("I NEED MY BEDICINE NOW", conversation)
-        reflect_input = result["steps"][1]["prompt"]["input"]
-        assert "filler message 1\n" not in reflect_input  # clamped to last 10
-        assert "filler message 2" in reflect_input
-        assert "filler message 11" in reflect_input
-        assert "ignored" not in reflect_input
+        prompt_input = result["steps"][0]["prompt"]["input"]
+        assert "filler message 1\n" not in prompt_input  # clamped to last 10
+        assert "filler message 2" in prompt_input
+        assert "filler message 11" in prompt_input
+        assert "ignored" not in prompt_input

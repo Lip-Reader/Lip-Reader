@@ -14,7 +14,7 @@ dependencies = [
     "torchaudio",
     "transformers==4.44.2",
     "anthropic",
-    "langgraph",
+    "langchain",
     "psycopg[binary]",
     "langchain-anthropic",
     "python-dotenv",

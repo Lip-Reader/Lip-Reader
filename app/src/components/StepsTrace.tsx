@@ -2,8 +2,7 @@ import { Step } from "../lib/api";
 
 const MODULE_COLOR: Record<string, string> = {
   vsr: "bg-amber-100 text-amber-700 border-amber-300",
-  generate: "bg-violet-100 text-violet-700 border-violet-300",
-  reflect: "bg-sky-100 text-sky-700 border-sky-300",
+  correct: "bg-violet-100 text-violet-700 border-violet-300",
 };
 
 function Field({ label, value }: { label: string; value: unknown }) {
@@ -39,7 +38,6 @@ export default function StepsTrace({ steps }: { steps: Step[] }) {
             <span className="truncate text-gray-500">
               {String(
                 (step.response as Record<string, unknown>).corrected ??
-                  (step.response as Record<string, unknown>).verdict ??
                   (step.response as Record<string, unknown>).raw_transcription ??
                   ""
               )}

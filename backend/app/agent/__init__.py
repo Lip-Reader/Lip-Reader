@@ -1,3 +1,3 @@
-"""LangGraph reflection agent that corrects raw VSR (lip-reading) output."""
+"""Single-pass agent that corrects raw VSR (lip-reading) output."""
 
-from .graph import run_agent  # noqa: F401
+from .agent import run_agent  # noqa: F401
