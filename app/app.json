@@ -1,0 +1,57 @@
+{
+  "expo": {
+    "name": "Chaplin AI",
+    "slug": "chaplin-ai",
+    "scheme": "chaplin",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#EEF2FF"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ai.chaplin.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Chaplin reads your lips from the camera.",
+        "NSMicrophoneUsageDescription": "Needed to record a short clip."
+      }
+    },
+    "android": {
+      "package": "ai.chaplin.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#EEF2FF",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "name": "Chaplin AI",
+      "shortName": "Chaplin",
+      "themeColor": "#7C6CF6",
+      "backgroundColor": "#EEF2FF"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Chaplin reads your lips from the camera.",
+          "microphonePermission": "Needed to record a short clip."
+        }
+      ],
+      "expo-secure-store",
+      "expo-audio",
+      "@clerk/expo"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
