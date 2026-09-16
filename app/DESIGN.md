@@ -36,7 +36,7 @@ panels are frosted glass floating above it. Light theme only.
 ## Components (`src/ui`)
 
 - **Background** — gradient + two blurred blobs, always under every screen except the live camera.
-- **GlassPanel** — blur + fill + border + soft shadow. Content padding 16–20.
+- **GlassPanel** — blur + fill + border + soft shadow. Content padding 16–20. `liquid` variant (landing cards): 22% white fill, blur 80, a diagonal white sheen on the top half, a faint accent tint, and a 1px inner light edge — the iOS 26 liquid-glass look.
 - **GlassButton** — pill, 52px tall, variants `primary` (accent gradient, white text), `ghost` (glassStrong, dark text), `danger` (danger fill, white text). Pressed: scale 0.97.
 - **IconButton** — 44×44 glass circle, one icon, used for the fixed Settings (top-left) and Admin (top-right) controls.
 - **Toast** — small glass pill at the top, auto-hides in 4 s.

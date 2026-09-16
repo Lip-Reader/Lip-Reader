@@ -12,6 +12,7 @@ export const colors = {
   muted: "#6B6A8A",
   glass: "rgba(255,255,255,0.55)",
   glassStrong: "rgba(255,255,255,0.80)",
+  liquid: "rgba(255,255,255,0.22)",
   glassBorder: "rgba(255,255,255,0.75)",
   danger: "#F87171",
   success: "#34D399",

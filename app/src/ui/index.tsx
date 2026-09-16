@@ -33,18 +33,27 @@ export function GlassPanel({
   children,
   style,
   strong,
+  liquid,
   intensity = 50,
 }: {
   children: ReactNode;
   style?: ViewStyle;
   strong?: boolean;
+  liquid?: boolean;
   intensity?: number;
 }) {
   return (
-    <View style={[styles.panelOuter, style]}>
-      <View style={styles.panelInner}>
-        <BlurView tint="light" intensity={intensity} style={styles.fill} />
-        <View style={[styles.fill, { backgroundColor: strong ? colors.glassStrong : colors.glass }]} />
+    <View style={[styles.panelOuter, liquid && styles.liquidOuter, style]}>
+      <View style={[styles.panelInner, liquid && styles.liquidInner]}>
+        <BlurView tint="light" intensity={liquid ? 80 : intensity} style={styles.fill} />
+        <View style={[styles.fill, { backgroundColor: liquid ? colors.liquid : strong ? colors.glassStrong : colors.glass }]} />
+        {liquid && (
+          <>
+            <LinearGradient colors={["rgba(255,255,255,0.7)", "rgba(255,255,255,0.05)"]} start={{ x: 0.2, y: 0 }} end={{ x: 0.6, y: 1 }} style={styles.liquidSheen} />
+            <LinearGradient colors={["rgba(124,108,246,0.0)", "rgba(124,108,246,0.10)"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.fill} />
+            <View style={styles.liquidEdge} pointerEvents="none" />
+          </>
+        )}
         <View style={styles.panelContent}>{children}</View>
       </View>
     </View>
@@ -155,6 +164,10 @@ const styles = StyleSheet.create({
     borderColor: colors.glassBorder,
   },
   panelContent: { padding: 18 },
+  liquidOuter: { boxShadow: "0 10px 30px rgba(99,91,255,0.12), inset 0 1px 0 rgba(255,255,255,0.9)" },
+  liquidInner: { borderColor: "rgba(255,255,255,0.55)" },
+  liquidSheen: { position: "absolute", top: 0, left: 0, right: 0, height: "55%" },
+  liquidEdge: { ...absoluteFill, margin: 1, borderRadius: radius.lg - 1, borderWidth: 1, borderColor: "rgba(255,255,255,0.75)" },
   button: {
     minHeight: 52,
     borderRadius: radius.pill,
