@@ -38,15 +38,25 @@ class InferencePipeline(torch.nn.Module):
 
         self.dataloader = AVSRDataLoader(modality, speed_rate=input_v_fps/model_v_fps, detector=detector)
         self.model = AVSR(modality, model_path, model_conf, rnnlm, rnnlm_conf, penalty, ctc_weight, lm_weight, beam_size, device)
-        if face_track and self.modality in ["video", "audiovisual"]:
-            if detector == "mediapipe":
-                from pipelines.detectors.mediapipe.detector import LandmarksDetector
-                self.landmarks_detector = LandmarksDetector()
-            if detector == "retinaface":
-                from pipelines.detectors.retinaface.detector import LandmarksDetector
-                self.landmarks_detector = LandmarksDetector(device=str(device))
-        else:
-            self.landmarks_detector = None
+        # Built on first use, not here: mediapipe opens a GPU/EGL context even when
+        # torch is on CPU, which fails a CPU-only memory snapshot.
+        self._detector = detector
+        self._device = device
+        self._face_track = face_track
+        self.landmarks_detector = None
+
+
+    def init_landmarks_detector(self):
+        if self.landmarks_detector is not None:
+            return
+        if not self._face_track or self.modality not in ["video", "audiovisual"]:
+            return
+        if self._detector == "mediapipe":
+            from pipelines.detectors.mediapipe.detector import LandmarksDetector
+            self.landmarks_detector = LandmarksDetector()
+        if self._detector == "retinaface":
+            from pipelines.detectors.retinaface.detector import LandmarksDetector
+            self.landmarks_detector = LandmarksDetector(device=str(self._device))
 
 
     def process_landmarks(self, data_filename, landmarks_filename):
@@ -56,6 +66,7 @@ class InferencePipeline(torch.nn.Module):
             if isinstance(landmarks_filename, str):
                 landmarks = pickle.load(open(landmarks_filename, "rb"))
             else:
+                self.init_landmarks_detector()
                 landmarks = self.landmarks_detector(data_filename)
             return landmarks
 

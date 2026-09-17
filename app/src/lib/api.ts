@@ -33,6 +33,18 @@ export function warmBackend(): void {
   fetch(`${VSR_BASE}/health`).catch(() => {});
 }
 
+export async function pingVsr(timeoutMs = 4000): Promise<boolean> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    return (await fetch(`${VSR_BASE}/health`, { signal: ctl.signal })).ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function vsrAvailable(): Promise<boolean> {
   try {
     const res = await fetch(`${VSR_BASE}/health`);
@@ -50,7 +62,20 @@ export async function executeLips(clip: ClipFile): Promise<ExecuteResult> {
   } else {
     form.append("file", clip as unknown as Blob);
   }
-  const res = await fetch(`${VSR_BASE}/api/execute_lips`, { method: "POST", body: form });
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 180_000);
+  let res: Response;
+  try {
+    res = await fetch(`${VSR_BASE}/api/execute_lips`, { method: "POST", body: form, signal: ctl.signal });
+  } catch (e) {
+    throw new Error(
+      e instanceof DOMException && e.name === "AbortError"
+        ? "The lip-reading service did not respond. It may still be starting up - try again."
+        : "Could not reach the lip-reading service."
+    );
+  } finally {
+    clearTimeout(t);
+  }
   if (res.status === 413) throw new Error("Recording too large. Try a shorter clip.");
   if (!res.ok) throw new Error(`/api/execute_lips failed: ${res.status}`);
   const data = await res.json();

@@ -53,6 +53,7 @@ def move_model_to_device(device=None):
         model.model.model.to(device)
         model.model.beam_search.to(device)
         model.model.device = device
+    model.init_landmarks_detector()  # deferred past the CPU snapshot; safe now
     log.info("VSR model on %s.", device)
 
 

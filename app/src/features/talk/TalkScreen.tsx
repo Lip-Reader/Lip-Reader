@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { executeLips, getPublicSettings, logRun, vsrAvailable } from "../../lib/api";
+import { executeLips, getPublicSettings, logRun, pingVsr, vsrAvailable } from "../../lib/api";
 import { useSession } from "../../lib/auth";
 import { Background, FixedControls, GlassButton, GlassPanel, IconButton, Toast } from "../../ui";
 import { absoluteFill, colors, fontFamily } from "../../ui/theme";
@@ -33,7 +33,22 @@ function Talk() {
   const [seconds, setSeconds] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
+  const [warm, setWarm] = useState<"warming" | "ready" | "unavailable">("warming");
   const hideToast = useCallback(() => setToast(null), []);
+
+  useEffect(() => {
+    let stop = false;
+    (async () => {
+      for (let i = 0; i < 30 && !stop; i++) {
+        if (await pingVsr()) return stop || setWarm("ready");
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      if (!stop) setWarm("unavailable");
+    })();
+    return () => {
+      stop = true;
+    };
+  }, []);
 
   useEffect(() => {
     getPublicSettings()
@@ -137,6 +152,12 @@ function Talk() {
 
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
         {paused && <Text style={styles.paused}>Lip reading is paused by the admin.</Text>}
+        {!paused && warm === "warming" && (
+          <Text style={styles.paused} testID="warming-note">Waking the lip-reading model up…</Text>
+        )}
+        {!paused && warm === "unavailable" && (
+          <Text style={styles.paused} testID="unavailable-note">The lip-reading service is not responding.</Text>
+        )}
         {speaker.error && <Text style={styles.paused}>{speaker.error}</Text>}
 
         {phase === "idle" && !recorder.error && (
