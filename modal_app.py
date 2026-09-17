@@ -65,8 +65,7 @@ app = modal.App("chaplin-ai")
     scaledown_window=600,  # keep warm 10 min after last use
     cpu=2.0,
     memory=8192,
-    # snapshot disabled: mediapipe opens a GPU/EGL context during the CPU snapshot
-    # phase, which fails snapshot creation and crash-loops every cold start.
+    enable_memory_snapshot=True,
 )
 class Backend:
     @modal.enter(snap=True)
