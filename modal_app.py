@@ -62,7 +62,7 @@ app = modal.App("chaplin-ai")
     volumes={f"{REMOTE_ROOT}/benchmarks": weights},
     secrets=[modal.Secret.from_name("chaplin-secrets")],
     timeout=600,
-    scaledown_window=3600,  # keep warm 1h after last use (~$0.75/idle hour)
+    scaledown_window=600,  # keep warm 10 min after last use
     cpu=2.0,
     memory=8192,
     # snapshot disabled: mediapipe opens a GPU/EGL context during the CPU snapshot
