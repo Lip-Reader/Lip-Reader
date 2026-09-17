@@ -66,14 +66,13 @@ app = modal.App("chaplin-ai")
     cpu=2.0,
     memory=8192,
     enable_memory_snapshot=True,
-    experimental_options={"enable_gpu_snapshot": True},
 )
 class Backend:
     @modal.enter(snap=True)
     def load_model(self):
-        # runs once per snapshot: torch import + VSR weights land on the GPU
-        # and get captured, so cold starts restore in seconds instead of
-        # re-loading from the network volume
+        # snapshotted once: torch import + weights parsed into RAM, on CPU only.
+        # CUDA must not be touched here (GPU snapshots are experimental and were
+        # failing on every cold start); the GPU move happens after restore.
         import os
         import sys
 
@@ -81,7 +80,13 @@ class Backend:
         sys.path.insert(0, REMOTE_ROOT)
         from backend.app import vsr
 
-        vsr.get_model()
+        vsr.get_model(device="cpu")
+
+    @modal.enter(snap=False)
+    def to_gpu(self):
+        from backend.app import vsr
+
+        vsr.move_model_to_device()
 
     # label keeps the pre-class URL (adamsi--chaplin-ai-backend.modal.run),
     # which the SPA hardcodes as VSR_BASE
