@@ -23,14 +23,15 @@ def _get_device():
     return torch.device("cpu")
 
 
-def get_model():
+def get_model(device=None):
     global _model
     if _model is None:
         with _model_lock:
             if _model is None:
+                import torch
                 from pipelines.pipeline import InferencePipeline
 
-                device = _get_device()
+                device = torch.device(device) if device else _get_device()
                 log.info("Loading VSR model on %s ...", device)
                 _model = InferencePipeline(
                     config.VSR_CONFIG,
@@ -40,6 +41,19 @@ def get_model():
                 )
                 log.info("VSR model loaded.")
     return _model
+
+
+def move_model_to_device(device=None):
+    """Move an already-loaded model (e.g. restored from a CPU-only snapshot) to the accelerator."""
+    import torch
+
+    model = get_model()
+    device = torch.device(device) if device else _get_device()
+    with _model_lock:
+        model.model.model.to(device)
+        model.model.beam_search.to(device)
+        model.model.device = device
+    log.info("VSR model on %s.", device)
 
 
 def transcribe_clip(video) -> str:
