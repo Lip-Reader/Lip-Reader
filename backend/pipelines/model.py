@@ -6,6 +6,7 @@
 
 import os
 import json
+import logging
 import torch
 import argparse
 import numpy as np
@@ -17,6 +18,8 @@ from espnet.nets.batch_beam_search import BatchBeamSearch
 from espnet.nets.lm_interface import dynamic_import_lm
 from espnet.nets.scorers.length_bonus import LengthBonus
 from espnet.nets.pytorch_backend.e2e_asr_transformer import E2E
+
+log = logging.getLogger("chaplin.vsr")
 
 
 class AVSR(torch.nn.Module):
@@ -57,12 +60,17 @@ class AVSR(torch.nn.Module):
             else:
                 enc_feats = self.model.encode(data.to(self.device))
 
-            nbest_hyps = self.beam_search(enc_feats)
-            best = nbest_hyps[0].asdict()
-            transcription = add_results_to_json([best], self.token_list)
-            transcription = transcription.replace("▁", " ").strip().replace("<eos>", "")
+            nbest_hyps = self.beam_search(enc_feats)[: self.beam_search.beam_size]
+            texts = [self._hyp_text(h) for h in nbest_hyps]
+            log.info("beam n-best (%d):", len(texts))
+            for i, (h, t) in enumerate(zip(nbest_hyps, texts), 1):
+                log.info("  %2d. %8.3f  %s", i, float(h.score), t)
 
-        return transcription
+        return texts[0]
+
+    def _hyp_text(self, hyp):
+        text = add_results_to_json([hyp.asdict()], self.token_list)
+        return text.replace("▁", " ").strip().replace("<eos>", "")
 
 
 def get_beam_search_decoder(model, token_list, rnnlm=None, rnnlm_conf=None, penalty=0, ctc_weight=0.1, lm_weight=0., beam_size=40):
