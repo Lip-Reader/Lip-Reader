@@ -1,4 +1,4 @@
-import { CameraView, useCameraPermissions, useMicrophonePermissions } from "expo-camera";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import type { ClipFile } from "../../lib/api";
@@ -9,22 +9,20 @@ const RecorderCtx = createContext<Ctx | null>(null);
 
 export function RecorderProvider({ children }: { children: ReactNode }) {
   const [cam, requestCam] = useCameraPermissions();
-  const [mic, requestMic] = useMicrophonePermissions();
   const [ready, setReady] = useState(false);
   const cameraRef = useRef<CameraView | null>(null);
   const recordingRef = useRef<Promise<{ uri: string } | undefined> | null>(null);
 
   const ask = useCallback(async () => {
     if (!cam?.granted) await requestCam();
-    if (!mic?.granted) await requestMic();
-  }, [cam?.granted, mic?.granted, requestCam, requestMic]);
+  }, [cam?.granted, requestCam]);
 
   useEffect(() => {
     ask();
   }, [ask]);
 
-  const granted = !!cam?.granted && !!mic?.granted;
-  const error = cam && mic && !granted ? "Camera access is required." : null;
+  const granted = !!cam?.granted;
+  const error = cam && !granted ? "Camera access is required." : null;
 
   const start = useCallback(async () => {
     if (!cameraRef.current || !ready) return false;
@@ -65,6 +63,7 @@ export function CameraPreview() {
       style={StyleSheet.absoluteFill}
       facing="front"
       mode="video"
+      mute
       videoQuality="480p"
       mirror={false}
       onCameraReady={ctx.onReady}

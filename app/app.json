@@ -17,8 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "ai.chaplin.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Chaplin reads your lips from the camera.",
-        "NSMicrophoneUsageDescription": "Needed to record a short clip."
+        "NSCameraUsageDescription": "Chaplin reads your lips from the camera."
       }
     },
     "android": {
@@ -42,8 +41,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Chaplin reads your lips from the camera.",
-          "microphonePermission": "Needed to record a short clip."
+          "cameraPermission": "Chaplin reads your lips from the camera."
         }
       ],
       "expo-secure-store",
