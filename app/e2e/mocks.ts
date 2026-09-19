@@ -1,4 +1,23 @@
 import type { Page } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+
+const PHRASES = JSON.parse(fs.readFileSync(path.join(__dirname, "../../assets/phrases/he.json"), "utf8"));
+const HE_VOICES = [
+  { id: "Oren", name: "Oren", description: "Hebrew male voice", gender: "male", lang: "HE_IL" },
+  { id: "Yael", name: "Yael", description: "Hebrew female voice", gender: "female", lang: "HE_IL" },
+];
+const HE_CANDIDATES = [
+  { id: "pain_hurts", text: "כואב לי", score: 0.31 },
+  { id: "pain_head", text: "כואב לי הראש", score: 0.34 },
+  { id: "needs_thirsty", text: "אני צמא", score: 0.52 },
+];
+
+function formField(page: Parameters<Parameters<Page["route"]>[1]>[0], name: string): string | null {
+  const body = page.request().postDataBuffer()?.toString("latin1") ?? "";
+  const m = new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)`).exec(body);
+  return m ? Buffer.from(m[1], "latin1").toString("utf8") : null;
+}
 
 const SILENT_MP3 =
   "SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQxAADB8AhSmxhIIEVCSiJrDCQBTcu3UrAIwUdkRgQbFAZC1CQEwTJ9mjRvBA4UOLD8nKVOWfh+UlK3z/177OXrfOdKl7pyn3Xf//WreyTRUoAWgBgkOAGbZHBgG1OF6zM82DWbZaUmMBptgQhGjsyYqc9ae9XFz280948NMBWInluyfoCMHVrzJVq4xrKzZoQEa3p/bAGZk2g//tQxAsCpA5pRFTiUOB6EiUoPmDGl1u5hEIRQIbRjoAZBaWDHEUYcKyU3fFgAlEEK6wI/1aSMcA6P22FKk0mPo6QkiALAyLLXP8DtEWFLpx9ka2r31/dlDdXpPz+9sWbaQ5tRUShEmPDgqLIiLqGx0Ub8Ol2sjVqS+F3SAB3Dnmw0BCmTJGT48qbudckC7ugdBAxIIThxNLxOGDW2NJLcAlyTeMoJvpY4xXJIqkGpFAImrfAfg5LNIIhFwmzuWJm2mE1L3ZAjAyf6Vqs5s0NA5iY2UwAQ5ZZ2rSy0K7VhLNa9AG9LPA=";
@@ -22,9 +41,34 @@ export async function mockBackend(page: Page, opts: { admin?: boolean } = {}) {
       },
     })
   );
+  await page.route(/\/voices\?lang=he$/, (r) => r.fulfill({ json: { voices: HE_VOICES } }));
   await page.route("**/voice/select", (r) => r.fulfill({ json: { voice_id: "Ashley", voice_source: "preset" } }));
+  await page.route("**/api/phrases/he", (r) => r.fulfill({ json: PHRASES }));
+  await page.route("**/api/phrase_templates*", (r) =>
+    r.request().method() === "DELETE"
+      ? r.fulfill({ json: { status: "ok", error: null, deleted: 1 } })
+      : r.fulfill({ json: { status: "ok", error: null, takes: { pain_hurts: 2 }, seed_phrases: ["basics_yes"], storage: true } })
+  );
+  await page.route("**/api/enroll_phrase", (r) =>
+    r.fulfill({ json: { status: "ok", error: null, phrase_id: formField(r, "phrase_id"), takes: 3, frames: 30 } })
+  );
   await page.route("**/api/execute_lips", async (r) => {
     await new Promise((res) => setTimeout(res, 300));
+    if (formField(r, "language") === "he") {
+      return r.fulfill({
+        json: {
+          status: "ok",
+          error: null,
+          response: HE_CANDIDATES[0].text,
+          confident: false,
+          candidates: HE_CANDIDATES,
+          steps: [
+            { module: "vsr", prompt: { input: "<video clip>", language: "he" }, response: { frames: 38, dim: 768 } },
+            { module: "match", prompt: { templates: 6, seed: 0 }, response: { candidates: HE_CANDIDATES, confident: false } },
+          ],
+        },
+      });
+    }
     r.fulfill({
       json: {
         status: "ok",

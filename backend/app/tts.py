@@ -12,8 +12,8 @@ log = logging.getLogger("chaplin.tts")
 
 # fallback if the Inworld voice catalog can't be fetched
 FALLBACK_VOICES = [
-    {"id": "Ashley", "name": "Ashley", "description": "Warm, friendly female voice.", "gender": "female"},
-    {"id": "Mark", "name": "Mark", "description": "Clear, neutral male voice.", "gender": "male"},
+    {"id": "Ashley", "name": "Ashley", "description": "Warm, friendly female voice.", "gender": "female", "lang": "EN_US"},
+    {"id": "Mark", "name": "Mark", "description": "Clear, neutral male voice.", "gender": "male", "lang": "EN_US"},
 ]
 
 _client: InworldTTS | None = None
@@ -29,12 +29,9 @@ def _get_client() -> InworldTTS:
     return _client
 
 
-def list_voices(refresh: bool = False) -> list[dict]:
-    """Return selectable voices from Inworld (English, cached).
-
-    Each item: {id, name, description, gender}. Falls back to a tiny built-in
-    list if the Inworld catalog can't be fetched, so onboarding always renders.
-    """
+def _all_voices(refresh: bool = False) -> list[dict]:
+    """Every Inworld voice, any language, cached. Falls back to a tiny built-in
+    list if the catalog can't be fetched, so onboarding always renders."""
     global _voices_cache
     if _voices_cache is not None and not refresh:
         return _voices_cache
@@ -46,9 +43,10 @@ def list_voices(refresh: bool = False) -> list[dict]:
                 "name": v.get("displayName") or v.get("voiceId"),
                 "description": (v.get("description") or "").strip(),
                 "gender": v.get("gender") or "",
+                "lang": str(v.get("langCode", "")).upper(),
             }
             for v in raw
-            if v.get("voiceId") and str(v.get("langCode", "")).upper().startswith("EN")
+            if v.get("voiceId")
         ]
         voices.sort(key=lambda x: x["name"].lower())
         _voices_cache = voices or FALLBACK_VOICES
@@ -58,8 +56,15 @@ def list_voices(refresh: bool = False) -> list[dict]:
     return _voices_cache
 
 
+def list_voices(lang: str = "en", refresh: bool = False) -> list[dict]:
+    """Selectable voices for one language code prefix ("en" -> EN_US, EN_GB, ...)."""
+    prefix = lang.upper()
+    voices = [v for v in _all_voices(refresh) if v.get("lang", "EN").startswith(prefix)]
+    return voices or (FALLBACK_VOICES if prefix == "EN" else [])
+
+
 def is_valid_voice(voice_id: str) -> bool:
-    return any(v["id"] == voice_id for v in list_voices())
+    return any(v["id"] == voice_id for v in _all_voices())
 
 
 def synthesize(text: str, voice_id: str) -> bytes:

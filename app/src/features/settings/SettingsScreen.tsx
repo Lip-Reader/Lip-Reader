@@ -4,14 +4,19 @@ import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { sendSupport } from "../../lib/api";
 import { useSession } from "../../lib/auth";
+import { t } from "../../lib/i18n";
 import { Background, Body, GlassButton, GlassPanel, IconButton, Title } from "../../ui";
 import { colors, fontFamily, radius } from "../../ui/theme";
+import PhraseBank from "./PhraseBank";
+import Segmented from "./Segmented";
+import { useSettings } from "./settingsStore";
 import VoicePicker from "./VoicePicker";
 
 export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const session = useSession();
+  const { language, setLanguage } = useSettings();
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState<string | null>(null);
 
@@ -20,9 +25,9 @@ export default function SettingsScreen() {
     try {
       await sendSupport(await session.getToken(), message.trim());
       setMessage("");
-      setSent("Thanks, your message was sent 💜");
+      setSent(t(language, "feedbackSentMsg"));
     } catch {
-      setSent("Couldn't send right now. Try again later.");
+      setSent(t(language, "feedbackErrorMsg"));
     }
   }
 
@@ -30,40 +35,57 @@ export default function SettingsScreen() {
     <Background>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 32 }]}>
         <View style={styles.header}>
-          <IconButton name="chevron-back" label="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace("/talk"))} testID="back-button" />
-          <Title>Settings</Title>
+          <IconButton name="chevron-back" label={t(language, "backLabel")} onPress={() => (router.canGoBack() ? router.back() : router.replace("/talk"))} testID="back-button" />
+          <Title>{t(language, "settingsTitle")}</Title>
         </View>
 
-        <Section title="🎙️ Voice" hint="This is how Chaplin will speak for you.">
+        <Section title={t(language, "languageSectionTitle")} hint={t(language, "languageSectionHint")}>
+          <Segmented
+            value={language}
+            onChange={setLanguage}
+            options={[
+              { value: "en", label: "English", testID: "lang-en" },
+              { value: "he", label: "עברית", testID: "lang-he" },
+            ]}
+          />
+        </Section>
+
+        {language === "he" && (
+          <Section title={t(language, "phrasesSectionTitle")} hint={t(language, "phrasesSectionHint")}>
+            <PhraseBank />
+          </Section>
+        )}
+
+        <Section title={t(language, "voiceSectionTitle")} hint={t(language, "voiceSectionHint")}>
           <VoicePicker />
         </Section>
 
-        <Section title="👤 Account">
+        <Section title={t(language, "accountSectionTitle")}>
           {session.signedIn ? (
             <>
               <Body>{session.email}</Body>
-              <GlassButton label="Sign out" onPress={() => session.signOut()} testID="signout-button" />
+              <GlassButton label={t(language, "signOutLabel")} onPress={() => session.signOut()} testID="signout-button" />
             </>
           ) : (
             <>
-              <Body muted>{session.enabled ? "Sign in to keep your voice on every device ☁️" : "Settings are saved on this device 📱"}</Body>
-              {session.enabled && <GlassButton label="Sign in" variant="primary" onPress={() => router.push("/sign-in")} testID="signin-button" />}
+              <Body muted>{session.enabled ? t(language, "signInCloudHint") : t(language, "localOnlyHint")}</Body>
+              {session.enabled && <GlassButton label={t(language, "signInLabel")} variant="primary" onPress={() => router.push("/sign-in")} testID="signin-button" />}
             </>
           )}
         </Section>
 
-        <Section title="💬 Feedback">
+        <Section title={t(language, "feedbackSectionTitle")}>
           <TextInput
             value={message}
             onChangeText={setMessage}
-            placeholder="Tell us what would help 🙌"
+            placeholder={t(language, "feedbackPlaceholder")}
             placeholderTextColor={colors.muted}
             multiline
-            style={styles.textarea}
+            style={[styles.textarea, language === "he" && styles.rtl]}
             accessibilityLabel="Feedback"
           />
           {sent && <Body muted>{sent}</Body>}
-          <GlassButton label="Send" onPress={send} disabled={!message.trim()} testID="feedback-send" />
+          <GlassButton label={t(language, "feedbackSendLabel")} onPress={send} disabled={!message.trim()} testID="feedback-send" />
         </Section>
       </ScrollView>
     </Background>
@@ -85,6 +107,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 6 },
   section: {},
   sectionTitle: { fontSize: 18, fontWeight: "600", color: colors.text, marginBottom: 6, fontFamily },
+  rtl: { writingDirection: "rtl", textAlign: "right" },
   textarea: {
     minHeight: 96,
     backgroundColor: colors.glassStrong,

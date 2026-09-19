@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { enrollVoice, getVoices, selectVoice, Voice } from "../../lib/api";
+import { enrollVoice, getVoices, Language, selectVoice, Voice } from "../../lib/api";
+import { showMoreLabel, t } from "../../lib/i18n";
 import { GlassButton } from "../../ui";
 import { colors, fontFamily, radius } from "../../ui/theme";
 import { CameraPreview, RecorderProvider, useRecorder } from "../talk/recorder";
@@ -10,20 +11,30 @@ import { useSettings } from "./settingsStore";
 const PAGE = 5;
 
 export default function VoicePicker() {
-  const { voiceId, setVoiceId } = useSettings();
+  const { voiceId, setVoiceId, language, gender } = useSettings();
   const [tab, setTab] = useState<"preset" | "record">("preset");
   const [voices, setVoices] = useState<Voice[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [shown, setShown] = useState(PAGE);
+  const lang = language;
 
   useEffect(() => {
-    getVoices()
-      .then(setVoices)
-      .catch(() => setError("Couldn't load voices."))
+    setLoading(true);
+    getVoices(language)
+      .then((list) => {
+        setVoices(list);
+        if (language === "he" && list.length && !list.some((v) => v.id === voiceId)) {
+          const want = gender === "f" ? "female" : "male";
+          choose((list.find((v) => (v.gender || "").toLowerCase() === want) ?? list[0]).id);
+        }
+      })
+      .catch(() => setError(t(lang, "couldntLoadVoices")))
       .finally(() => setLoading(false));
-  }, []);
+    // the voice follows the language; a later gender change must not swap a chosen voice
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language]);
 
   const q = query.trim().toLowerCase();
   const filtered = q
@@ -38,16 +49,16 @@ export default function VoicePicker() {
       await selectVoice(id);
       await setVoiceId(id);
     } catch {
-      setError("Couldn't save that voice. Try again.");
+      setError(t(lang, "couldntSaveVoice"));
     }
   }
 
   return (
     <View style={{ gap: 12 }}>
       <View style={styles.tabs}>
-        {(["preset", "record"] as const).map((t) => (
-          <Pressable key={t} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]} accessibilityRole="tab">
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t === "preset" ? "🎭 Voices" : "🎤 Record my voice"}</Text>
+        {(["preset", "record"] as const).map((tabValue) => (
+          <Pressable key={tabValue} onPress={() => setTab(tabValue)} style={[styles.tab, tab === tabValue && styles.tabActive]} accessibilityRole="tab">
+            <Text style={[styles.tabText, tab === tabValue && styles.tabTextActive]}>{tabValue === "preset" ? t(lang, "voicesTab") : t(lang, "recordMyVoiceTab")}</Text>
           </Pressable>
         ))}
       </View>
@@ -61,7 +72,7 @@ export default function VoicePicker() {
               setQuery(v);
               setShown(PAGE);
             }}
-            placeholder="Search voices"
+            placeholder={t(lang, "searchVoicesPlaceholder")}
             placeholderTextColor={colors.muted}
             style={styles.input}
             accessibilityLabel="Search voices"
@@ -82,10 +93,10 @@ export default function VoicePicker() {
                   </Pressable>
                 );
               })}
-              {filtered.length === 0 && <Text style={styles.voiceDesc}>No voices match.</Text>}
+              {filtered.length === 0 && <Text style={styles.voiceDesc}>{t(lang, "noVoicesMatch")}</Text>}
               {filtered.length > shown && (
                 <Pressable onPress={() => setShown((n) => n + PAGE)} style={styles.more} accessibilityRole="button">
-                  <Text style={styles.moreText}>Show more ({filtered.length - shown}) ▾</Text>
+                  <Text style={styles.moreText}>{showMoreLabel(lang, filtered.length - shown)}</Text>
                 </Pressable>
               )}
             </ScrollView>
@@ -93,14 +104,14 @@ export default function VoicePicker() {
         </>
       ) : (
         <RecorderProvider>
-          <RecordVoice onDone={choose} />
+          <RecordVoice onDone={choose} lang={lang} />
         </RecorderProvider>
       )}
     </View>
   );
 }
 
-function RecordVoice({ onDone }: { onDone: (id: string) => Promise<void> }) {
+function RecordVoice({ onDone, lang }: { onDone: (id: string) => Promise<void>; lang: Language }) {
   const recorder = useRecorder();
   const [state, setState] = useState<"idle" | "recording" | "uploading">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +127,7 @@ function RecordVoice({ onDone }: { onDone: (id: string) => Promise<void> }) {
     try {
       await onDone(await enrollVoice(clip));
     } catch {
-      setError("Couldn't create the voice. Try again.");
+      setError(t(lang, "couldntCreateVoice"));
     }
     setState("idle");
   }
@@ -126,10 +137,10 @@ function RecordVoice({ onDone }: { onDone: (id: string) => Promise<void> }) {
       <View style={styles.preview}>
         <CameraPreview />
       </View>
-      <Text style={styles.voiceDesc}>Read a few sentences out loud for about 20 seconds, then stop.</Text>
+      <Text style={styles.voiceDesc}>{t(lang, "recordVoiceHint")}</Text>
       {(error || recorder.error) && <Text style={styles.error}>{error || recorder.error}</Text>}
-      {state === "idle" && <GlassButton label="Start recording" variant="primary" onPress={start} disabled={!recorder.ready} />}
-      {state === "recording" && <GlassButton label="Stop" variant="danger" onPress={stop} />}
+      {state === "idle" && <GlassButton label={t(lang, "startRecordingLabel")} variant="primary" onPress={start} disabled={!recorder.ready} />}
+      {state === "recording" && <GlassButton label={t(lang, "stopLabel")} variant="danger" onPress={stop} />}
       {state === "uploading" && <ActivityIndicator color={colors.accent} />}
     </View>
   );

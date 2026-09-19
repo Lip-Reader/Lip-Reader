@@ -3,15 +3,16 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { executeLips, getPublicSettings, logRun, pingVsr, vsrAvailable } from "../../lib/api";
+import { Candidate, executeLips, getPublicSettings, logRun, pingVsr, vsrAvailable } from "../../lib/api";
 import { useSession } from "../../lib/auth";
+import { t } from "../../lib/i18n";
 import { Background, FixedControls, GlassButton, GlassPanel, IconButton, Toast } from "../../ui";
 import { absoluteFill, colors, fontFamily } from "../../ui/theme";
 import { useSettings } from "../settings/settingsStore";
 import { CameraPreview, RecorderProvider, useRecorder } from "./recorder";
 import { useSpeaker } from "./speaker";
 
-type Phase = "idle" | "recording" | "thinking" | "review";
+type Phase = "idle" | "recording" | "thinking" | "choose" | "review";
 
 export default function TalkScreen() {
   return (
@@ -25,11 +26,14 @@ function Talk() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const session = useSession();
-  const { voiceId } = useSettings();
+  const { voiceId, language, gender, patientKey, ready: settingsReady } = useSettings();
   const recorder = useRecorder();
   const speaker = useSpeaker();
   const [phase, setPhase] = useState<Phase>("idle");
   const [text, setText] = useState("");
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [rawResult, setRawResult] = useState("");
+  const [startedAt, setStartedAt] = useState(0);
   const [seconds, setSeconds] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
@@ -66,8 +70,16 @@ function Talk() {
   async function talk() {
     speaker.reset();
     setText("");
-    if (!(await recorder.start())) return setToast("Camera is not ready yet.");
+    setCandidates([]);
+    if (!(await recorder.start())) return setToast(t(language, "cameraNotReady"));
     setPhase("recording");
+  }
+
+  function reset() {
+    speaker.reset();
+    setText("");
+    setCandidates([]);
+    setPhase("idle");
   }
 
   async function stop() {
@@ -75,8 +87,15 @@ function Talk() {
     const clip = await recorder.stop();
     if (!clip) return setPhase("idle");
     const t0 = Date.now();
+    setStartedAt(t0);
     try {
-      const result = await executeLips(clip);
+      const result = await executeLips(clip, { language, patientKey, gender });
+      setRawResult(result.raw);
+      if (language === "he" && !result.confident && result.candidates?.length) {
+        setCandidates(result.candidates);
+        setPhase("choose");
+        return;
+      }
       setText(result.response);
       setPhase("review");
       logRun(await session.getToken(), result.raw, result.response, Date.now() - t0);
@@ -84,28 +103,47 @@ function Talk() {
       const known = e instanceof Error && e.message && !e.message.startsWith("/api/");
       setToast(
         !(await vsrAvailable())
-          ? "The lip-reading service is unavailable right now."
+          ? t(language, "vsrUnavailableToast")
           : known
             ? (e as Error).message
-            : "Something went wrong. Tap Talk to try again."
+            : t(language, "genericErrorToast")
       );
       setPhase("idle");
     }
   }
 
+  async function choose(c: Candidate) {
+    setText(c.text);
+    setPhase("review");
+    logRun(await session.getToken(), rawResult, c.text, Date.now() - startedAt);
+  }
+
   const showText = phase === "review";
+  const dim = phase === "review" || phase === "choose";
   const mmss = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
   return (
     <View style={styles.root}>
       <CameraPreview />
-      {showText && <View style={styles.dim} />}
+      {dim && <View style={styles.dim} />}
 
       <FixedControls>
-        <IconButton name="settings-outline" label="Settings" onPress={() => router.push("/settings")} testID="settings-button" />
-        {session.isAdmin && (
-          <IconButton name="shield-checkmark-outline" label="Admin" onPress={() => router.push("/admin")} testID="admin-button" />
-        )}
+        <IconButton name="settings-outline" label={t(language, "settingsLabel")} onPress={() => router.push("/settings")} testID="settings-button" />
+        <View style={styles.rightControls}>
+          {(phase === "review" || phase === "choose") && (
+            <IconButton name="refresh-outline" label={t(language, "resetLabel")} onPress={reset} testID="reset-button" />
+          )}
+          <IconButton
+            name="camera-reverse-outline"
+            label={t(language, "flipCameraLabel")}
+            onPress={recorder.flip}
+            disabled={phase === "recording"}
+            testID="flip-camera-button"
+          />
+          {session.isAdmin && (
+            <IconButton name="shield-checkmark-outline" label={t(language, "adminLabel")} onPress={() => router.push("/admin")} testID="admin-button" />
+          )}
+        </View>
       </FixedControls>
 
       <Toast text={toast} onHide={hideToast} />
@@ -113,7 +151,7 @@ function Talk() {
       {phase === "recording" && (
         <View style={[styles.pill, { top: insets.top + 64 }]}>
           <View style={styles.dot} />
-          <Text style={styles.pillText}>Listening · {mmss}</Text>
+          <Text style={styles.pillText}>{t(language, "listeningLabel")} · {mmss}</Text>
         </View>
       )}
 
@@ -125,9 +163,21 @@ function Talk() {
         </View>
       )}
 
+      {phase === "choose" && (
+        <View style={styles.sentenceBox}>
+          <View style={styles.chooseBox}>
+            <Text style={styles.chooseTitle}>{t(language, "whichOne")}</Text>
+            {candidates.map((c, i) => (
+              <GlassButton key={c.id} label={c.text} onPress={() => choose(c)} testID={`candidate-${i}`} />
+            ))}
+            <GlassButton label={t(language, "noneOfThese")} variant="danger" onPress={() => setPhase("idle")} testID="candidate-none" />
+          </View>
+        </View>
+      )}
+
       {showText && (
         <View style={styles.sentenceBox}>
-          <Text style={styles.sentence} testID="sentence">
+          <Text style={[styles.sentence, language === "he" && styles.rtl]} testID="sentence">
             {speaker.tokens.length > 0
               ? speaker.tokens.map((tk, i) => (
                   <Text key={i} style={{ opacity: i < speaker.spoken ? 1 : 0.4 }}>
@@ -145,42 +195,42 @@ function Talk() {
           <GlassPanel style={styles.errorPanel}>
             <Ionicons name="videocam-off-outline" size={34} color={colors.accent} style={{ alignSelf: "center" }} />
             <Text style={styles.errorText}>{recorder.error}</Text>
-            <GlassButton label="Retry" variant="primary" onPress={recorder.retry} />
+            <GlassButton label={t(language, "retryLabel")} variant="primary" onPress={recorder.retry} />
           </GlassPanel>
         </View>
       )}
 
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
-        {paused && <Text style={styles.paused}>Lip reading is paused by the admin.</Text>}
+        {paused && <Text style={styles.paused}>{t(language, "pausedLabel")}</Text>}
         {!paused && warm === "warming" && (
-          <Text style={styles.paused} testID="warming-note">Waking the lip-reading model up…</Text>
+          <Text style={styles.paused} testID="warming-note">{t(language, "warmingLabel")}</Text>
         )}
         {!paused && warm === "unavailable" && (
-          <Text style={styles.paused} testID="unavailable-note">The lip-reading service is not responding.</Text>
+          <Text style={styles.paused} testID="unavailable-note">{t(language, "unavailableLabel")}</Text>
         )}
         {speaker.error && <Text style={styles.paused}>{speaker.error}</Text>}
 
         {phase === "idle" && !recorder.error && (
-          <GlassButton label="Talk" onPress={talk} disabled={paused || !recorder.ready} icon={<RecordDot />} testID="talk-button" />
+          <GlassButton label={t(language, "talkLabel")} onPress={talk} disabled={paused || !recorder.ready || !settingsReady} icon={<RecordDot />} testID="talk-button" />
         )}
         {phase === "recording" && (
-          <GlassButton label="Stop" variant="danger" onPress={stop} icon={<Ionicons name="stop" size={18} color={colors.white} />} testID="stop-button" />
+          <GlassButton label={t(language, "stopLabel")} variant="danger" onPress={stop} icon={<Ionicons name="stop" size={18} color={colors.white} />} testID="stop-button" />
         )}
         {phase === "review" && speaker.phase !== "playing" && (
           <>
             <GlassButton
-              label={speaker.phase === "preparing" ? "Preparing…" : "Speak"}
+              label={speaker.phase === "preparing" ? t(language, "preparingLabel") : t(language, "speakLabel")}
               variant="primary"
               disabled={speaker.phase === "preparing"}
               onPress={() => speaker.play(text, voiceId)}
               icon={<Ionicons name="volume-high" size={20} color={colors.white} />}
               testID="speak-button"
             />
-            <GlassButton label="Talk" onPress={talk} icon={<RecordDot />} testID="talk-button" />
+            <GlassButton label={t(language, "talkLabel")} onPress={talk} icon={<RecordDot />} testID="talk-button" />
           </>
         )}
         {phase === "review" && speaker.phase === "playing" && (
-          <GlassButton label="Stop" variant="danger" onPress={speaker.stop} icon={<Ionicons name="stop" size={18} color={colors.white} />} />
+          <GlassButton label={t(language, "stopLabel")} variant="danger" onPress={speaker.stop} icon={<Ionicons name="stop" size={18} color={colors.white} />} />
         )}
       </View>
     </View>
@@ -219,6 +269,10 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   sentence: { color: colors.white, fontSize: 30, fontWeight: "600", textAlign: "center", lineHeight: 40, maxWidth: 520, fontFamily },
+  rtl: { writingDirection: "rtl" },
+  rightControls: { flexDirection: "row", gap: 10 },
+  chooseBox: { width: "100%", maxWidth: 360, gap: 10 },
+  chooseTitle: { color: colors.white, fontSize: 18, fontWeight: "600", textAlign: "center", marginBottom: 4, fontFamily },
   errorPanel: { width: "88%", maxWidth: 380 },
   errorText: { color: colors.text, fontSize: 16, textAlign: "center", marginVertical: 14, fontFamily },
   bottom: { position: "absolute", left: 20, right: 20, bottom: 0, gap: 12, alignItems: "center", zIndex: 30 },

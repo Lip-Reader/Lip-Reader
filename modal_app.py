@@ -4,7 +4,7 @@ Setup:
   uv run modal setup
   uv run modal volume create chaplin-weights
   uv run modal volume put chaplin-weights benchmarks/LRS3 /LRS3
-  # Modal secret `chaplin-secrets`: ANTHROPIC_API_KEY
+  # Modal secret `chaplin-secrets`: ANTHROPIC_API_KEY, DATABASE_URL (Hebrew phrase templates)
 
 Deploy:
   uv run modal deploy modal_app.py
@@ -35,6 +35,7 @@ image = (
         "uvicorn[standard]",
         "python-multipart",
         "httpx",
+        "psycopg[binary]",
     )
     .env(
         {

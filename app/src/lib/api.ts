@@ -6,11 +6,18 @@ export const VSR_BASE =
 
 export type Voice = { id: string; name: string; description?: string; gender?: string };
 export type Step = { module: string; prompt: Record<string, unknown>; response: Record<string, unknown> };
-export type ExecuteResult = { response: string; steps: Step[]; raw: string };
+export type Language = "en" | "he";
+export type Gender = "m" | "f";
+export type Candidate = { id: string; text: string; score: number };
+export type ExecuteResult = { response: string; steps: Step[]; raw: string; confident?: boolean; candidates?: Candidate[] };
+export type ExecuteOptions = { language?: Language; patientKey?: string | null; gender?: Gender };
+export type Phrase = { id: string; group: string; text_m: string; text_f: string };
+export type PhraseBank = { language: string; version: number; groups: { id: string; title: string }[]; phrases: Phrase[] };
+export type PhraseTemplates = { takes: Record<string, number>; seed_phrases: string[]; storage: boolean };
 export type SpokenToken = { t: string; start: number };
 export type ClipFile = Blob | { uri: string; name: string; type: string };
 export type PublicSettings = { default_voice_id: string; lip_reading_enabled: boolean };
-export type UserSettings = { voice_id: string | null };
+export type UserSettings = { voice_id: string | null; language: Language | null; gender: Gender | null; patient_key: string | null };
 
 type Token = string | null | undefined;
 
@@ -55,12 +62,22 @@ export async function vsrAvailable(): Promise<boolean> {
   }
 }
 
-export async function executeLips(clip: ClipFile): Promise<ExecuteResult> {
+function clipForm(clip: ClipFile): FormData {
   const form = new FormData();
   if (clip instanceof Blob) {
     form.append("file", clip, clip.type.includes("webm") ? "clip.webm" : "clip.mp4");
   } else {
     form.append("file", clip as unknown as Blob);
+  }
+  return form;
+}
+
+export async function executeLips(clip: ClipFile, opts: ExecuteOptions = {}): Promise<ExecuteResult> {
+  const form = clipForm(clip);
+  if (opts.language === "he") {
+    form.append("language", "he");
+    if (opts.patientKey) form.append("patient_key", opts.patientKey);
+    form.append("gender", opts.gender ?? "m");
   }
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 180_000);
@@ -81,8 +98,31 @@ export async function executeLips(clip: ClipFile): Promise<ExecuteResult> {
   const data = await res.json();
   if (data.status !== "ok" || !data.response) throw new Error(data.error || "lip reading failed");
   const steps: Step[] = data.steps || [];
-  const raw = String(steps.find((s) => s.module === "vsr")?.response?.raw_transcription ?? "");
-  return { response: data.response, steps, raw };
+  const candidates: Candidate[] | undefined = data.candidates;
+  const raw = candidates
+    ? candidates.map((c) => `${c.id}:${c.score}`).join(" ")
+    : String(steps.find((s) => s.module === "vsr")?.response?.raw_transcription ?? "");
+  return { response: data.response, steps, raw, confident: data.confident, candidates };
+}
+
+export const getPhrases = (lang: Language) => request<PhraseBank>(API_BASE, `/api/phrases/${lang}`);
+
+export async function getPhraseTemplates(patientKey: string): Promise<PhraseTemplates> {
+  const d = await request<PhraseTemplates & { status: string; error?: string }>(
+    VSR_BASE,
+    `/api/phrase_templates?patient_key=${encodeURIComponent(patientKey)}`
+  );
+  if (d.status !== "ok") throw new Error(d.error || "Couldn't load your phrases.");
+  return d;
+}
+
+export async function enrollPhrase(clip: ClipFile, patientKey: string, phraseId: string): Promise<{ takes: number }> {
+  const form = clipForm(clip);
+  form.append("patient_key", patientKey);
+  form.append("phrase_id", phraseId);
+  const d = await request<{ status: string; error?: string; takes: number }>(VSR_BASE, "/api/enroll_phrase", { method: "POST", body: form });
+  if (d.status !== "ok") throw new Error(d.error || "Couldn't save that take.");
+  return { takes: d.takes };
 }
 
 export async function speak(text: string, voiceId: string): Promise<{ audioUri: string; tokens: SpokenToken[] }> {
@@ -94,7 +134,8 @@ export async function speak(text: string, voiceId: string): Promise<{ audioUri: 
   return { audioUri: `data:${data.mime || "audio/mpeg"};base64,${data.audio}`, tokens: data.tokens || [] };
 }
 
-export const getVoices = () => request<{ voices: Voice[] }>(API_BASE, "/voices").then((d) => d.voices);
+export const getVoices = (lang: Language = "en") =>
+  request<{ voices: Voice[] }>(API_BASE, lang === "en" ? "/voices" : `/voices?lang=${lang}`).then((d) => d.voices);
 export const selectVoice = (voiceId: string) => request(API_BASE, "/voice/select", json({ voice_id: voiceId }));
 
 export async function enrollVoice(clip: ClipFile): Promise<string> {
@@ -106,8 +147,8 @@ export async function enrollVoice(clip: ClipFile): Promise<string> {
 
 export const getPublicSettings = () => request<PublicSettings>(API_BASE, "/api/settings/public");
 export const getMySettings = (token: Token) => request<UserSettings>(API_BASE, "/api/me/settings", {}, token);
-export const putMySettings = (token: Token, voiceId: string) =>
-  request<UserSettings>(API_BASE, "/api/me/settings", json({ voice_id: voiceId }, "PUT"), token);
+export const putMySettings = (token: Token, patch: Partial<UserSettings>) =>
+  request<UserSettings>(API_BASE, "/api/me/settings", json(patch, "PUT"), token);
 export const sendSupport = (token: Token, message: string) =>
   request<{ id: number }>(API_BASE, "/api/support", json({ message }), token);
 export const logRun = (token: Token, raw: string, corrected: string, latencyMs: number) =>

@@ -1,0 +1,648 @@
+{
+ "language": "he",
+ "version": 1,
+ "groups": [
+  {
+   "id": "basics",
+   "title": "בסיסי"
+  },
+  {
+   "id": "pain",
+   "title": "כאב"
+  },
+  {
+   "id": "breathing",
+   "title": "נשימה וצינור"
+  },
+  {
+   "id": "comfort",
+   "title": "נוחות ותנוחה"
+  },
+  {
+   "id": "needs",
+   "title": "צרכים"
+  },
+  {
+   "id": "care",
+   "title": "טיפול והיגיינה"
+  },
+  {
+   "id": "people",
+   "title": "אנשים"
+  },
+  {
+   "id": "feelings",
+   "title": "רגשות"
+  },
+  {
+   "id": "questions",
+   "title": "שאלות"
+  },
+  {
+   "id": "treatment",
+   "title": "טיפול רפואי"
+  }
+ ],
+ "phrases": [
+  {
+   "id": "basics_yes",
+   "group": "basics",
+   "text_m": "כן",
+   "text_f": "כן"
+  },
+  {
+   "id": "basics_no",
+   "group": "basics",
+   "text_m": "לא",
+   "text_f": "לא"
+  },
+  {
+   "id": "basics_thanks",
+   "group": "basics",
+   "text_m": "תודה",
+   "text_f": "תודה"
+  },
+  {
+   "id": "basics_please",
+   "group": "basics",
+   "text_m": "בבקשה",
+   "text_f": "בבקשה"
+  },
+  {
+   "id": "basics_dont_know",
+   "group": "basics",
+   "text_m": "אני לא יודע",
+   "text_f": "אני לא יודעת"
+  },
+  {
+   "id": "basics_wait",
+   "group": "basics",
+   "text_m": "רגע",
+   "text_f": "רגע"
+  },
+  {
+   "id": "basics_again",
+   "group": "basics",
+   "text_m": "עוד פעם",
+   "text_f": "עוד פעם"
+  },
+  {
+   "id": "basics_repeat",
+   "group": "basics",
+   "text_m": "תחזרו על זה",
+   "text_f": "תחזרו על זה"
+  },
+  {
+   "id": "basics_understood",
+   "group": "basics",
+   "text_m": "הבנתי",
+   "text_f": "הבנתי"
+  },
+  {
+   "id": "basics_not_understood",
+   "group": "basics",
+   "text_m": "לא הבנתי",
+   "text_f": "לא הבנתי"
+  },
+  {
+   "id": "pain_hurts",
+   "group": "pain",
+   "text_m": "כואב לי",
+   "text_f": "כואב לי"
+  },
+  {
+   "id": "pain_hurts_a_lot",
+   "group": "pain",
+   "text_m": "כואב לי מאוד",
+   "text_f": "כואב לי מאוד"
+  },
+  {
+   "id": "pain_head",
+   "group": "pain",
+   "text_m": "כואב לי הראש",
+   "text_f": "כואב לי הראש"
+  },
+  {
+   "id": "pain_throat",
+   "group": "pain",
+   "text_m": "כואב לי הגרון",
+   "text_f": "כואב לי הגרון"
+  },
+  {
+   "id": "pain_stomach",
+   "group": "pain",
+   "text_m": "כואבת לי הבטן",
+   "text_f": "כואבת לי הבטן"
+  },
+  {
+   "id": "pain_back",
+   "group": "pain",
+   "text_m": "כואב לי הגב",
+   "text_f": "כואב לי הגב"
+  },
+  {
+   "id": "pain_legs",
+   "group": "pain",
+   "text_m": "כואבות לי הרגליים",
+   "text_f": "כואבות לי הרגליים"
+  },
+  {
+   "id": "pain_painkiller",
+   "group": "pain",
+   "text_m": "אני צריך משכך כאבים",
+   "text_f": "אני צריכה משכך כאבים"
+  },
+  {
+   "id": "pain_gone",
+   "group": "pain",
+   "text_m": "הכאב עבר",
+   "text_f": "הכאב עבר"
+  },
+  {
+   "id": "pain_returned",
+   "group": "pain",
+   "text_m": "הכאב חזר",
+   "text_f": "הכאב חזר"
+  },
+  {
+   "id": "breathing_hard_to_breathe",
+   "group": "breathing",
+   "text_m": "קשה לי לנשום",
+   "text_f": "קשה לי לנשום"
+  },
+  {
+   "id": "breathing_suction",
+   "group": "breathing",
+   "text_m": "אני צריך שאיבה",
+   "text_f": "אני צריכה שאיבה"
+  },
+  {
+   "id": "breathing_tube_bothers",
+   "group": "breathing",
+   "text_m": "הצינור מפריע לי",
+   "text_f": "הצינור מפריע לי"
+  },
+  {
+   "id": "breathing_phlegm",
+   "group": "breathing",
+   "text_m": "יש לי ליחה",
+   "text_f": "יש לי ליחה"
+  },
+  {
+   "id": "breathing_choking",
+   "group": "breathing",
+   "text_m": "אני נחנק",
+   "text_f": "אני נחנקת"
+  },
+  {
+   "id": "breathing_check_machine",
+   "group": "breathing",
+   "text_m": "תבדקו את המכונה",
+   "text_f": "תבדקו את המכונה"
+  },
+  {
+   "id": "breathing_oxygen",
+   "group": "breathing",
+   "text_m": "אני צריך חמצן",
+   "text_f": "אני צריכה חמצן"
+  },
+  {
+   "id": "breathing_breathing_wrong",
+   "group": "breathing",
+   "text_m": "משהו לא בסדר עם הנשימה",
+   "text_f": "משהו לא בסדר עם הנשימה"
+  },
+  {
+   "id": "breathing_chest_pressure",
+   "group": "breathing",
+   "text_m": "יש לי לחץ בחזה",
+   "text_f": "יש לי לחץ בחזה"
+  },
+  {
+   "id": "breathing_remove_mask",
+   "group": "breathing",
+   "text_m": "תורידו לי את המסכה",
+   "text_f": "תורידו לי את המסכה"
+  },
+  {
+   "id": "comfort_cold",
+   "group": "comfort",
+   "text_m": "קר לי",
+   "text_f": "קר לי"
+  },
+  {
+   "id": "comfort_hot",
+   "group": "comfort",
+   "text_m": "חם לי",
+   "text_f": "חם לי"
+  },
+  {
+   "id": "comfort_cover_me",
+   "group": "comfort",
+   "text_m": "תכסו אותי",
+   "text_f": "תכסו אותי"
+  },
+  {
+   "id": "comfort_remove_blanket",
+   "group": "comfort",
+   "text_m": "תורידו את השמיכה",
+   "text_f": "תורידו את השמיכה"
+  },
+  {
+   "id": "comfort_move_me",
+   "group": "comfort",
+   "text_m": "תזיזו אותי",
+   "text_f": "תזיזו אותי"
+  },
+  {
+   "id": "comfort_raise_head",
+   "group": "comfort",
+   "text_m": "תרימו לי את הראש",
+   "text_f": "תרימו לי את הראש"
+  },
+  {
+   "id": "comfort_lower_head",
+   "group": "comfort",
+   "text_m": "תורידו לי את הראש",
+   "text_f": "תורידו לי את הראש"
+  },
+  {
+   "id": "comfort_turn_side",
+   "group": "comfort",
+   "text_m": "תסובבו אותי על הצד",
+   "text_f": "תסובבו אותי על הצד"
+  },
+  {
+   "id": "comfort_uncomfortable",
+   "group": "comfort",
+   "text_m": "לא נוח לי ככה",
+   "text_f": "לא נוח לי ככה"
+  },
+  {
+   "id": "comfort_pillow",
+   "group": "comfort",
+   "text_m": "תסדרו לי את הכרית",
+   "text_f": "תסדרו לי את הכרית"
+  },
+  {
+   "id": "needs_thirsty",
+   "group": "needs",
+   "text_m": "אני צמא",
+   "text_f": "אני צמאה"
+  },
+  {
+   "id": "needs_hungry",
+   "group": "needs",
+   "text_m": "אני רעב",
+   "text_f": "אני רעבה"
+  },
+  {
+   "id": "needs_toilet",
+   "group": "needs",
+   "text_m": "אני צריך לשירותים",
+   "text_f": "אני צריכה לשירותים"
+  },
+  {
+   "id": "needs_urinate",
+   "group": "needs",
+   "text_m": "אני צריך להשתין",
+   "text_f": "אני צריכה להשתין"
+  },
+  {
+   "id": "needs_nausea",
+   "group": "needs",
+   "text_m": "יש לי בחילה",
+   "text_f": "יש לי בחילה"
+  },
+  {
+   "id": "needs_vomit",
+   "group": "needs",
+   "text_m": "אני רוצה להקיא",
+   "text_f": "אני רוצה להקיא"
+  },
+  {
+   "id": "needs_dizzy",
+   "group": "needs",
+   "text_m": "אני מסוחרר",
+   "text_f": "אני מסוחררת"
+  },
+  {
+   "id": "needs_tired",
+   "group": "needs",
+   "text_m": "אני עייף",
+   "text_f": "אני עייפה"
+  },
+  {
+   "id": "needs_sleep",
+   "group": "needs",
+   "text_m": "אני רוצה לישון",
+   "text_f": "אני רוצה לישון"
+  },
+  {
+   "id": "needs_sit",
+   "group": "needs",
+   "text_m": "אני רוצה לשבת",
+   "text_f": "אני רוצה לשבת"
+  },
+  {
+   "id": "care_clean_mouth",
+   "group": "care",
+   "text_m": "תנקו לי את הפה",
+   "text_f": "תנקו לי את הפה"
+  },
+  {
+   "id": "care_wet_lips",
+   "group": "care",
+   "text_m": "תרטיבו לי את השפתיים",
+   "text_f": "תרטיבו לי את השפתיים"
+  },
+  {
+   "id": "care_itchy",
+   "group": "care",
+   "text_m": "מגרד לי",
+   "text_f": "מגרד לי"
+  },
+  {
+   "id": "care_scratch",
+   "group": "care",
+   "text_m": "תגרדו לי",
+   "text_f": "תגרדו לי"
+  },
+  {
+   "id": "care_wash_face",
+   "group": "care",
+   "text_m": "תשטפו לי את הפנים",
+   "text_f": "תשטפו לי את הפנים"
+  },
+  {
+   "id": "care_shower",
+   "group": "care",
+   "text_m": "אני רוצה להתקלח",
+   "text_f": "אני רוצה להתקלח"
+  },
+  {
+   "id": "care_diaper",
+   "group": "care",
+   "text_m": "תחליפו לי את החיתול",
+   "text_f": "תחליפו לי את החיתול"
+  },
+  {
+   "id": "care_wound",
+   "group": "care",
+   "text_m": "הפצע כואב",
+   "text_f": "הפצע כואב"
+  },
+  {
+   "id": "care_check_iv",
+   "group": "care",
+   "text_m": "תבדקו את העירוי",
+   "text_f": "תבדקו את העירוי"
+  },
+  {
+   "id": "care_wet_bed",
+   "group": "care",
+   "text_m": "הרטבתי את המיטה",
+   "text_f": "הרטבתי את המיטה"
+  },
+  {
+   "id": "people_nurse",
+   "group": "people",
+   "text_m": "תקראו לאחות",
+   "text_f": "תקראו לאחות"
+  },
+  {
+   "id": "people_doctor",
+   "group": "people",
+   "text_m": "תקראו לרופא",
+   "text_f": "תקראו לרופא"
+  },
+  {
+   "id": "people_family_talk",
+   "group": "people",
+   "text_m": "אני רוצה לדבר עם המשפחה",
+   "text_f": "אני רוצה לדבר עם המשפחה"
+  },
+  {
+   "id": "people_call_wife",
+   "group": "people",
+   "text_m": "תתקשרו לאשתי",
+   "text_f": "תתקשרו לאשתי"
+  },
+  {
+   "id": "people_call_husband",
+   "group": "people",
+   "text_m": "תתקשרו לבעלי",
+   "text_f": "תתקשרו לבעלי"
+  },
+  {
+   "id": "people_call_children",
+   "group": "people",
+   "text_m": "תתקשרו לילדים שלי",
+   "text_f": "תתקשרו לילדים שלי"
+  },
+  {
+   "id": "people_who_are_you",
+   "group": "people",
+   "text_m": "מי אתם",
+   "text_f": "מי אתם"
+  },
+  {
+   "id": "people_where_family",
+   "group": "people",
+   "text_m": "איפה המשפחה שלי",
+   "text_f": "איפה המשפחה שלי"
+  },
+  {
+   "id": "people_stay",
+   "group": "people",
+   "text_m": "תישארו איתי",
+   "text_f": "תישארו איתי"
+  },
+  {
+   "id": "people_alone",
+   "group": "people",
+   "text_m": "תנו לי להיות לבד",
+   "text_f": "תנו לי להיות לבד"
+  },
+  {
+   "id": "feelings_scared",
+   "group": "feelings",
+   "text_m": "אני מפחד",
+   "text_f": "אני מפחדת"
+  },
+  {
+   "id": "feelings_sad",
+   "group": "feelings",
+   "text_m": "אני עצוב",
+   "text_f": "אני עצובה"
+  },
+  {
+   "id": "feelings_angry",
+   "group": "feelings",
+   "text_m": "אני כועס",
+   "text_f": "אני כועסת"
+  },
+  {
+   "id": "feelings_worried",
+   "group": "feelings",
+   "text_m": "אני מודאג",
+   "text_f": "אני מודאגת"
+  },
+  {
+   "id": "feelings_ok",
+   "group": "feelings",
+   "text_m": "אני בסדר",
+   "text_f": "אני בסדר"
+  },
+  {
+   "id": "feelings_better",
+   "group": "feelings",
+   "text_m": "אני מרגיש יותר טוב",
+   "text_f": "אני מרגישה יותר טוב"
+  },
+  {
+   "id": "feelings_worse",
+   "group": "feelings",
+   "text_m": "אני מרגיש יותר גרוע",
+   "text_f": "אני מרגישה יותר גרוע"
+  },
+  {
+   "id": "feelings_frustrated",
+   "group": "feelings",
+   "text_m": "אני מתוסכל",
+   "text_f": "אני מתוסכלת"
+  },
+  {
+   "id": "feelings_lonely",
+   "group": "feelings",
+   "text_m": "אני מרגיש בודד",
+   "text_f": "אני מרגישה בודדה"
+  },
+  {
+   "id": "feelings_home",
+   "group": "feelings",
+   "text_m": "אני רוצה הביתה",
+   "text_f": "אני רוצה הביתה"
+  },
+  {
+   "id": "questions_time",
+   "group": "questions",
+   "text_m": "מה השעה",
+   "text_f": "מה השעה"
+  },
+  {
+   "id": "questions_day",
+   "group": "questions",
+   "text_m": "איזה יום היום",
+   "text_f": "איזה יום היום"
+  },
+  {
+   "id": "questions_where",
+   "group": "questions",
+   "text_m": "איפה אני",
+   "text_f": "איפה אני"
+  },
+  {
+   "id": "questions_what_happened",
+   "group": "questions",
+   "text_m": "מה קרה לי",
+   "text_f": "מה קרה לי"
+  },
+  {
+   "id": "questions_doctor_when",
+   "group": "questions",
+   "text_m": "מתי הרופא מגיע",
+   "text_f": "מתי הרופא מגיע"
+  },
+  {
+   "id": "questions_tube_when",
+   "group": "questions",
+   "text_m": "מתי מורידים את הצינור",
+   "text_f": "מתי מורידים את הצינור"
+  },
+  {
+   "id": "questions_home_when",
+   "group": "questions",
+   "text_m": "מתי אני חוזר הביתה",
+   "text_f": "מתי אני חוזרת הביתה"
+  },
+  {
+   "id": "questions_results",
+   "group": "questions",
+   "text_m": "מה התוצאות",
+   "text_f": "מה התוצאות"
+  },
+  {
+   "id": "questions_doing",
+   "group": "questions",
+   "text_m": "מה אתם עושים",
+   "text_f": "מה אתם עושים"
+  },
+  {
+   "id": "questions_how_long",
+   "group": "questions",
+   "text_m": "כמה זמן זה ייקח",
+   "text_f": "כמה זמן זה ייקח"
+  },
+  {
+   "id": "treatment_medicine",
+   "group": "treatment",
+   "text_m": "אני צריך תרופה",
+   "text_f": "אני צריכה תרופה"
+  },
+  {
+   "id": "treatment_not_helping",
+   "group": "treatment",
+   "text_m": "התרופה לא עוזרת",
+   "text_f": "התרופה לא עוזרת"
+  },
+  {
+   "id": "treatment_refuse",
+   "group": "treatment",
+   "text_m": "אני לא רוצה את הטיפול הזה",
+   "text_f": "אני לא רוצה את הטיפול הזה"
+  },
+  {
+   "id": "treatment_explain",
+   "group": "treatment",
+   "text_m": "תסבירו לי מה עושים",
+   "text_f": "תסבירו לי מה עושים"
+  },
+  {
+   "id": "treatment_stop",
+   "group": "treatment",
+   "text_m": "תעצרו",
+   "text_f": "תעצרו"
+  },
+  {
+   "id": "treatment_continue",
+   "group": "treatment",
+   "text_m": "תמשיכו",
+   "text_f": "תמשיכו"
+  },
+  {
+   "id": "treatment_pause",
+   "group": "treatment",
+   "text_m": "תפסיקו רגע",
+   "text_f": "תפסיקו רגע"
+  },
+  {
+   "id": "treatment_helps",
+   "group": "treatment",
+   "text_m": "זה עוזר",
+   "text_f": "זה עוזר"
+  },
+  {
+   "id": "treatment_disagree",
+   "group": "treatment",
+   "text_m": "אני לא מסכים",
+   "text_f": "אני לא מסכימה"
+  },
+  {
+   "id": "treatment_sign",
+   "group": "treatment",
+   "text_m": "אני רוצה לחתום",
+   "text_f": "אני רוצה לחתום"
+  }
+ ]
+}

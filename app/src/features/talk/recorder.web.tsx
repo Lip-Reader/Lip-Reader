@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ClipFile } from "../../lib/api";
-import type { Recorder } from "./recorder.types";
+import { storage } from "../../lib/storage";
+import { CAMERA_KEY, Facing, Recorder } from "./recorder.types";
 
 const MIME_CANDIDATES = ["video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
 
@@ -15,16 +16,33 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [facing, setFacing] = useState<Facing>("front");
+  const loadedRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
+    storage.get(CAMERA_KEY).then((v) => {
+      if (v === "back") setFacing("back");
+      loadedRef.current = true;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (loadedRef.current) storage.set(CAMERA_KEY, facing);
+  }, [facing]);
+
+  useEffect(() => {
     let alive = true;
     setError(null);
+    setReady(false);
     navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 25 } }, audio: false })
+      .getUserMedia({
+        video: { facingMode: facing === "front" ? "user" : "environment", width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 25 } },
+        audio: false,
+      })
       .then((stream) => {
         if (!alive) return stream.getTracks().forEach((t) => t.stop());
         streamRef.current = stream;
@@ -45,7 +63,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
       streamRef.current = null;
       setReady(false);
     };
-  }, [attempt]);
+  }, [attempt, facing]);
 
   const attach = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;
@@ -79,8 +97,12 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  const flip = useCallback(() => setFacing((f) => (f === "front" ? "back" : "front")), []);
 
-  const value = useMemo(() => ({ ready, error, start, stop, retry, attach }), [ready, error, start, stop, retry, attach]);
+  const value = useMemo(
+    () => ({ ready, error, facing, flip, start, stop, retry, attach }),
+    [ready, error, facing, flip, start, stop, retry, attach]
+  );
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>;
 }
 
@@ -92,19 +114,21 @@ export function useRecorder(): Recorder {
 
 export function CameraPreview() {
   const ctx = useContext(RecorderCtx);
+  const facing = ctx?.facing ?? "front";
   return (
     <video
       ref={ctx?.attach}
       autoPlay
       muted
       playsInline
+      data-facing={facing}
       style={{
         position: "absolute",
         inset: 0,
         width: "100%",
         height: "100%",
         objectFit: "cover",
-        transform: "scaleX(-1)",
+        transform: facing === "front" ? "scaleX(-1)" : "none",
         background: "#000",
       }}
     />

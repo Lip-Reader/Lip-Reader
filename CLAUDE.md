@@ -42,15 +42,27 @@ api/index.py        Vercel entry for backend/app/main.py.   modal_app.py: Modal 
   Python function, deps in `requirements.txt`, no torch) and the VSR service
   (Modal GPU, `modal_app.py`; local port 8001). The device owns the camera; only
   text leaves it. Video is deleted right after inference.
-- **Auth:** Clerk. Guests can use everything; sign-in only syncs `{ voice_id }`
-  via `GET|PUT /api/me/settings`. Admin = Clerk public metadata `{ "role": "admin" }`
+- **Hebrew phrase mode** (`backend/app/phrases.py`, `assets/phrases/he.json`,
+  `app/src/features/settings/PhraseBank.tsx`): no Hebrew VSR model exists, so
+  `language=he` on `/api/execute_lips` matches the clip's encoder features
+  (`vsr.extract_features`) against per-patient templates (`phrase_templates`, keyed by
+  a device-generated `patient_key`) with DTW; unsure results return top-3 `candidates`
+  that the Talk screen shows as buttons. English requests never enter this branch.
+- **UI language:** `app/src/lib/i18n.ts` holds every chrome string (buttons, headers, hints,
+  toasts) in English and Hebrew; screens call `t(language, key)` so choosing Hebrew in Settings
+  relabels the whole app, not just the phrase content. The Talk screen's Reset button (shown once
+  a result or candidates are on screen) clears them and returns to idle.
+- **Auth:** Clerk. Guests can use everything; sign-in only syncs
+  `{ voice_id, language, gender, patient_key }` via `GET|PUT /api/me/settings`. Admin = Clerk public metadata `{ "role": "admin" }`
   (`auth.require_admin`). No publishable key → guest-only build; no
   `CLERK_SECRET_KEY` → authenticated routes return 503.
 - **Database:** Supabase Postgres (`backend/app/db.py`): `user_settings`,
-  `app_settings`, `support_messages`, `audit_log`, `runs` (text only).
+  `app_settings`, `support_messages`, `audit_log`, `runs`, `phrase_templates`
+  (text and encoder features only, never video). The VSR service on Modal needs
+  `DATABASE_URL` in `chaplin-secrets` for enrollment.
   `.github/workflows/db-keepalive.yml` pings `/api/db_ping` every 5 min.
 - **Platform splits** live only in `*.web.tsx` / `*.native.tsx` files
-  (recorder, speaker, storage, SignInScreen).
+  (recorder incl. the front/back camera `facing`, speaker, storage, SignInScreen).
 - **Agent:** `backend/app/agent/agent.py`, single `correct` call via LangChain
   `create_agent`; `run_agent(raw, conversation)` keeps the history argument for evals.
 
