@@ -104,20 +104,24 @@ export function IconButton({
   label,
   style,
   testID,
+  disabled,
 }: {
   name: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   label: string;
   style?: ViewStyle;
   testID?: string;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
       testID={testID}
-      style={({ pressed }) => [styles.iconButton, { transform: [{ scale: pressed ? 0.94 : 1 }] }, style]}
+      style={({ pressed }) => [styles.iconButton, { transform: [{ scale: pressed ? 0.94 : 1 }], opacity: disabled ? 0.45 : 1 }, style]}
     >
       <Ionicons name={name} size={22} color={colors.text} />
     </Pressable>

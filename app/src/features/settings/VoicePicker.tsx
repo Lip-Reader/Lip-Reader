@@ -10,7 +10,7 @@ import { useSettings } from "./settingsStore";
 const PAGE = 5;
 
 export default function VoicePicker() {
-  const { voiceId, setVoiceId } = useSettings();
+  const { voiceId, setVoiceId, language, gender } = useSettings();
   const [tab, setTab] = useState<"preset" | "record">("preset");
   const [voices, setVoices] = useState<Voice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,11 +19,20 @@ export default function VoicePicker() {
   const [shown, setShown] = useState(PAGE);
 
   useEffect(() => {
-    getVoices()
-      .then(setVoices)
+    setLoading(true);
+    getVoices(language)
+      .then((list) => {
+        setVoices(list);
+        if (language === "he" && list.length && !list.some((v) => v.id === voiceId)) {
+          const want = gender === "f" ? "female" : "male";
+          choose((list.find((v) => (v.gender || "").toLowerCase() === want) ?? list[0]).id);
+        }
+      })
       .catch(() => setError("Couldn't load voices."))
       .finally(() => setLoading(false));
-  }, []);
+    // the voice follows the language; a later gender change must not swap a chosen voice
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language]);
 
   const q = query.trim().toLowerCase();
   const filtered = q

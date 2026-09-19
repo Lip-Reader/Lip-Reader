@@ -2,7 +2,8 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import type { ClipFile } from "../../lib/api";
-import type { Recorder } from "./recorder.types";
+import { storage } from "../../lib/storage";
+import { CAMERA_KEY, Facing, Recorder } from "./recorder.types";
 
 type Ctx = Recorder & { cameraRef: React.RefObject<CameraView | null>; onReady: () => void };
 const RecorderCtx = createContext<Ctx | null>(null);
@@ -10,6 +11,8 @@ const RecorderCtx = createContext<Ctx | null>(null);
 export function RecorderProvider({ children }: { children: ReactNode }) {
   const [cam, requestCam] = useCameraPermissions();
   const [ready, setReady] = useState(false);
+  const [facing, setFacing] = useState<Facing>("front");
+  const loadedRef = useRef(false);
   const cameraRef = useRef<CameraView | null>(null);
   const recordingRef = useRef<Promise<{ uri: string } | undefined> | null>(null);
 
@@ -20,6 +23,17 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     ask();
   }, [ask]);
+
+  useEffect(() => {
+    storage.get(CAMERA_KEY).then((v) => {
+      if (v === "back") setFacing("back");
+      loadedRef.current = true;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (loadedRef.current) storage.set(CAMERA_KEY, facing);
+  }, [facing]);
 
   const granted = !!cam?.granted;
   const error = cam && !granted ? "Camera access is required." : null;
@@ -40,10 +54,11 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const onReady = useCallback(() => setReady(true), []);
+  const flip = useCallback(() => setFacing((f) => (f === "front" ? "back" : "front")), []);
 
   const value = useMemo(
-    () => ({ ready: ready && granted, error, start, stop, retry: ask, cameraRef, onReady }),
-    [ready, granted, error, start, stop, ask, onReady]
+    () => ({ ready: ready && granted, error, facing, flip, start, stop, retry: ask, cameraRef, onReady }),
+    [ready, granted, error, facing, flip, start, stop, ask, onReady]
   );
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>;
 }
@@ -61,7 +76,7 @@ export function CameraPreview() {
     <CameraView
       ref={ctx.cameraRef}
       style={StyleSheet.absoluteFill}
-      facing="front"
+      facing={ctx.facing}
       mode="video"
       mute
       videoQuality="480p"

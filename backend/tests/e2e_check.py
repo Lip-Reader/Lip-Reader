@@ -61,9 +61,11 @@ def main() -> int:
 
     ok = {"env": False, "team_info": False, "agent_info": False, "architecture": False,
           "settings_public": False, "support": False, "runs": False, "auth_guard": False,
-          "execute_lips": False, "speak": False, "db_ping": False}
+          "execute_lips": False, "speak": False, "db_ping": False,
+          "phrases": False, "voices_he": False, "execute_lips_he": False, "enroll_phrase": False,
+          "phrase_templates": False}
 
-    step("1/11  Environment")
+    step("1/16  Environment")
     print(f"ANTHROPIC_API_KEY: {'set' if config.ANTHROPIC_API_KEY else 'MISSING'}")
     print(f"INWORLD_API_KEY  : {'set' if config.INWORLD_API_KEY else 'MISSING'}")
     print(f"DATABASE_URL     : {'set' if config.DATABASE_URL else 'MISSING'}")
@@ -76,7 +78,7 @@ def main() -> int:
 
     client = TestClient(app)
 
-    step("2/11  GET /api/team_info")
+    step("2/16  GET /api/team_info")
     r = client.get("/api/team_info")
     body = r.json() if r.status_code == 200 else {}
     ok["team_info"] = (
@@ -87,7 +89,7 @@ def main() -> int:
     )
     print(f"status: {r.status_code}  team: {body.get('team_name')!r}  students: {len(body.get('students', []))}")
 
-    step("3/11  GET /api/agent_info")
+    step("3/16  GET /api/agent_info")
     r = client.get("/api/agent_info")
     body = r.json() if r.status_code == 200 else {}
     ok["agent_info"] = (
@@ -98,12 +100,12 @@ def main() -> int:
     )
     print(f"status: {r.status_code}  keys: {sorted(body.keys())}")
 
-    step("4/11  GET /api/model_architecture")
+    step("4/16  GET /api/model_architecture")
     r = client.get("/api/model_architecture")
     ok["architecture"] = r.status_code == 200 and r.headers.get("content-type", "").startswith("image/png")
     print(f"status: {r.status_code}  content-type: {r.headers.get('content-type')}  bytes: {len(r.content)}")
 
-    step("5/11  GET /api/settings/public")
+    step("5/16  GET /api/settings/public")
     t0 = time.time()
     r = client.get("/api/settings/public")
     body = r.json() if r.status_code == 200 else {}
@@ -114,20 +116,20 @@ def main() -> int:
     )
     print(f"status: {r.status_code}  latency: {time.time() - t0:.1f}s  body: {body or r.text[:120]}")
 
-    step("6/11  POST /api/support (guest)")
+    step("6/16  POST /api/support (guest)")
     r = client.post("/api/support", json={"message": "e2e check message"})
     body = r.json() if r.status_code == 200 else {}
     empty = client.post("/api/support", json={"message": "  "}).status_code
     ok["support"] = r.status_code == 200 and isinstance(body.get("id"), int) and empty == 400
     print(f"status: {r.status_code}  id: {body.get('id')}  empty-message -> {empty}")
 
-    step("7/11  POST /api/runs (guest)")
+    step("7/16  POST /api/runs (guest)")
     r = client.post("/api/runs", json={"raw": "HELLO WORLD", "corrected": "Hello world.", "latency_ms": 1200})
     body = r.json() if r.status_code == 200 else {}
     ok["runs"] = r.status_code == 200 and isinstance(body.get("id"), int)
     print(f"status: {r.status_code}  id: {body.get('id')}")
 
-    step("8/11  Auth guards (no token)")
+    step("8/16  Auth guards (no token)")
     me = client.get("/api/me/settings")
     adm = client.get("/api/admin/overview")
     expected = 401 if config.CLERK_SECRET_KEY else 503
@@ -140,7 +142,7 @@ def main() -> int:
         ok["auth_guard"] = ok["auth_guard"] and bad.status_code == 401
         print(f"GET /api/me/settings (bogus token) -> {bad.status_code}")
 
-    step("9/11  POST /api/execute_lips (vsr_lip_reader service)")
+    step("9/16  POST /api/execute_lips (vsr_lip_reader service)")
     vsr_client = TestClient(vsr_app)
     clip_path, kind = make_clip()
     speak_text = "Hello from Chaplin."
@@ -170,7 +172,7 @@ def main() -> int:
         if os.path.exists(clip_path):
             os.remove(clip_path)
 
-    step("10/11  POST /speak")
+    step("10/16  POST /speak")
     r = client.post("/speak", json={"text": speak_text})
     if r.status_code == 200 and r.json().get("audio"):
         body = r.json()
@@ -179,11 +181,76 @@ def main() -> int:
     else:
         print(f"status: {r.status_code} {r.text[:200]}")
 
-    step("11/11  GET /api/db_ping")
+    step("11/16  GET /api/db_ping")
     t0 = time.time()
     r = client.get("/api/db_ping")
     ok["db_ping"] = r.status_code == 200 and r.json().get("db") == 1
     print(f"status: {r.status_code}  latency: {time.time() - t0:.1f}s")
+
+    step("12/16  GET /api/phrases/he")
+    r = client.get("/api/phrases/he")
+    body = r.json() if r.status_code == 200 else {}
+    ok["phrases"] = r.status_code == 200 and len(body.get("phrases", [])) == 100 and len(body.get("groups", [])) == 10
+    print(f"status: {r.status_code}  phrases: {len(body.get('phrases', []))}  groups: {len(body.get('groups', []))}"
+          f"  unknown lang -> {client.get('/api/phrases/xx').status_code}")
+
+    step("13/16  GET /voices?lang=he")
+    r = client.get("/voices", params={"lang": "he"})
+    he = [v["id"] for v in (r.json().get("voices", []) if r.status_code == 200 else [])]
+    en = [v["id"] for v in client.get("/voices").json().get("voices", [])]
+    ok["voices_he"] = r.status_code == 200 and (not config.INWORLD_API_KEY or bool(he)) and all(v not in en for v in he)
+    print(f"status: {r.status_code}  hebrew voices: {he}  english voices: {len(en)}")
+
+    step("14/16  POST /api/execute_lips (language=he)")
+    clip_path, kind = make_clip()
+    try:
+        t0 = time.time()
+        with open(clip_path, "rb") as f:
+            r = vsr_client.post("/api/execute_lips", files={"file": ("clip.mp4", f, "video/mp4")},
+                                data={"language": "he", "patient_key": "e2e-check", "gender": "m"})
+        body = r.json() if r.status_code == 200 else {}
+        print(f"status: {r.status_code}  latency: {time.time() - t0:.1f}s  clip: {kind}")
+        if body.get("status") == "ok":
+            ok["execute_lips_he"] = (
+                isinstance(body.get("candidates"), list) and isinstance(body.get("confident"), bool)
+                and [s["module"] for s in body.get("steps", [])] == ["vsr", "match"]
+            )
+            print(f"response : {body.get('response')!r}  confident: {body.get('confident')}  candidates: {body.get('candidates')}")
+        else:
+            ok["execute_lips_he"] = bool(body.get("response") is None and body.get("steps") == [] and body.get("error"))
+            print(f"error    : {body.get('error')!r} (valid error shape - no face, or no templates enrolled)")
+
+        step("15/16  POST /api/enroll_phrase")
+        t0 = time.time()
+        with open(clip_path, "rb") as f:
+            r = vsr_client.post("/api/enroll_phrase", files={"file": ("clip.mp4", f, "video/mp4")},
+                                data={"patient_key": "e2e-check", "phrase_id": "basics_yes"})
+        body = r.json() if r.status_code == 200 else {}
+        print(f"status: {r.status_code}  latency: {time.time() - t0:.1f}s")
+        if body.get("status") == "ok":
+            ok["enroll_phrase"] = isinstance(body.get("takes"), int) and body.get("phrase_id") == "basics_yes"
+            print(f"takes    : {body.get('takes')}  frames: {body.get('frames')}")
+        else:
+            ok["enroll_phrase"] = bool(body.get("response") is None and body.get("error"))
+            print(f"error    : {body.get('error')!r} (valid error shape - no face, or storage not configured)")
+        bad = vsr_client.post("/api/enroll_phrase", files={"file": ("clip.mp4", b"x", "video/mp4")},
+                              data={"patient_key": "e2e-check", "phrase_id": "nope"}).json()
+        ok["enroll_phrase"] = ok["enroll_phrase"] and bad.get("status") == "error"
+        print(f"unknown phrase -> {bad.get('error')!r}")
+    finally:
+        if os.path.exists(clip_path):
+            os.remove(clip_path)
+
+    step("16/16  GET/DELETE /api/phrase_templates")
+    r = vsr_client.get("/api/phrase_templates", params={"patient_key": "e2e-check"})
+    body = r.json() if r.status_code == 200 else {}
+    d = vsr_client.delete("/api/phrase_templates", params={"patient_key": "e2e-check"}).json()
+    ok["phrase_templates"] = (
+        r.status_code == 200 and body.get("status") == "ok" and isinstance(body.get("takes"), dict)
+        and (d.get("status") == "ok" or not config.DATABASE_URL)
+    )
+    print(f"status: {r.status_code}  takes: {body.get('takes')}  storage: {body.get('storage')}  seed phrases: {len(body.get('seed_phrases', []))}"
+          f"  cleanup deleted: {d.get('deleted')}")
 
     print("\n" + "=" * 44)
     print(" CHAPLIN AI BACKEND E2E")

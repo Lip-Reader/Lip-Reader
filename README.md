@@ -21,11 +21,12 @@ camera clip ─▶ vsr (Auto-AVSR) ─▶ correct ─▶ sentence ─▶ Speak (
 |-------------|----------------------------------------------------------------------------|
 | `app/`      | Expo app (Expo Router, React Native + react-native-web). Routes in `app/app/`, features in `app/src/features/`, glass UI kit in `app/src/ui/`. Web export deployed on Vercel. |
 | `backend/app/main.py` | API backend (FastAPI): voices/TTS, settings, support, run log, admin API, workshop metadata. Vercel Python function via `api/index.py`. |
-| `backend/app/vsr_main.py` | vsr_lip_reader service: `POST /api/execute_lips` (clip → VSR → corrector). Runs on Modal (`modal_app.py`). |
+| `backend/app/vsr_main.py` | vsr_lip_reader service: `POST /api/execute_lips` (clip → VSR → corrector; Hebrew: clip → encoder features → phrase match) and the Hebrew enrollment endpoints. Runs on Modal (`modal_app.py`). |
+| `backend/app/phrases.py` · `assets/phrases/he.json` | Hebrew phrase mode: the 100-phrase list, template packing, DTW matcher and confidence rule. |
 | `backend/app/agent/` | Single-pass corrector agent (LangChain `create_agent`). |
 | `backend/app/auth.py` · `admin.py` · `db.py` | Clerk JWT verification + admin role check, admin router, Supabase Postgres store. |
 | `backend/pipelines/`, `backend/espnet/` | Vendored VSR internals (upstream, not rewritten). |
-| `assets/`   | VSR config, test-video ground truths, `architecture.png`. |
+| `assets/`   | VSR config, test-video ground truths, `architecture.png`, Hebrew phrase list (`phrases/he.json`). |
 | `backend/tests/`, `app/e2e/` | Backend pytest suite + `e2e_check.py`; Playwright flows for the app. |
 
 **Privacy:** uploaded clips are processed in a temp file and deleted immediately
@@ -36,10 +37,12 @@ and feedback are stored in Postgres).
 
 | Method & path | Auth | Purpose |
 |---|---|---|
-| `POST /api/execute_lips` (VSR service) | – | mp4/webm clip → `{ status, error, response, steps }`; steps start with `vsr` |
-| `POST /speak` · `GET /voices` · `POST /voice/select` · `POST /voice/enroll` | – | TTS with word timestamps, voice catalog / selection / cloning |
+| `POST /api/execute_lips` (VSR service) | – | mp4/webm clip → `{ status, error, response, steps }`; steps start with `vsr`. Form field `language=he` (+ `patient_key`, `gender`) switches to phrase matching and adds `confident` and `candidates` (top 3) |
+| `POST /api/enroll_phrase` · `GET|DELETE /api/phrase_templates` (VSR service) | – | Hebrew enrollment: one take → encoder features stored per `patient_key` (never video) · take counts per phrase / reset |
+| `GET /api/phrases/he` | – | the Hebrew phrase list (10 groups × 10, masculine and feminine forms) |
+| `POST /speak` · `GET /voices?lang=en` · `POST /voice/select` · `POST /voice/enroll` | – | TTS with word timestamps, voice catalog per language (`he` → Inworld's Hebrew voices) / selection / cloning |
 | `GET /api/settings/public` | – | `{ default_voice_id, lip_reading_enabled }` |
-| `GET|PUT /api/me/settings` | member | `{ voice_id }` |
+| `GET|PUT /api/me/settings` | member | `{ voice_id, language, gender, patient_key }` (PUT accepts any subset) |
 | `POST /api/support` · `POST /api/runs` | optional | feedback message · lip-read run log (text only) |
 | `GET /api/admin/overview|users|settings|support|audit|runs`, `PATCH /api/admin/settings|support/{id}` | admin | admin panel data; mutations write `audit_log` |
 | `GET /api/team_info` · `/api/agent_info` · `/api/model_architecture` | – | workshop metadata |
@@ -90,4 +93,21 @@ cd app && npm run shots                     # screenshots → app/screenshots/
 - **Vercel**: builds `app/dist` with `npx expo export -p web` and serves the API from
   `api/index.py`. Set `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
   `DATABASE_URL`, `ANTHROPIC_API_KEY`, `INWORLD_API_KEY` in the project settings.
-- **Modal**: `uv run modal deploy modal_app.py` (VSR service; unchanged).
+- **Modal**: `uv run modal deploy modal_app.py` (VSR service). The `chaplin-secrets`
+  secret needs `ANTHROPIC_API_KEY` and `DATABASE_URL` (Hebrew phrase templates live in
+  the same Postgres; without it enrollment reports "Template storage is not configured").
+
+## Hebrew phrase mode
+
+Hebrew has no lip-reading model, so Hebrew works from a fixed list of 100 phrases that
+each patient teaches the app: pick Hebrew in Settings, open a phrase, mouth it three
+times. Each take is turned into visual encoder features on the VSR service (the same
+Auto-AVSR encoder, stopped before the English text decoder) and stored under a random
+patient key; the clip is deleted. On Talk, the clip's features are compared with every
+enrolled phrase by dynamic time warping; a clear winner is spoken, otherwise the three
+best matches are shown to tap. Optional speaker-independent templates can be shipped as
+`assets/phrases/he_seed.npz` (`backend/tools/build_phrase_seed.py` from clips under
+`assets/hebrew_clips/<phrase_id>/`). Accuracy is measured by
+`backend/tests/test_phrase_eval.py` on clips under `assets/hebrew_clips/<patient>/<phrase_id>/`.
+English is untouched: without `language=he` the service runs the same path as before, and
+`backend/tools/make_english_golden.py` pins its transcriptions for the regression test.

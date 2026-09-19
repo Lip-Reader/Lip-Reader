@@ -6,12 +6,16 @@ import { sendSupport } from "../../lib/api";
 import { useSession } from "../../lib/auth";
 import { Background, Body, GlassButton, GlassPanel, IconButton, Title } from "../../ui";
 import { colors, fontFamily, radius } from "../../ui/theme";
+import PhraseBank from "./PhraseBank";
+import Segmented from "./Segmented";
+import { useSettings } from "./settingsStore";
 import VoicePicker from "./VoicePicker";
 
 export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const session = useSession();
+  const { language, setLanguage } = useSettings();
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState<string | null>(null);
 
@@ -33,6 +37,23 @@ export default function SettingsScreen() {
           <IconButton name="chevron-back" label="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace("/talk"))} testID="back-button" />
           <Title>Settings</Title>
         </View>
+
+        <Section title="🌍 Language" hint="What you speak. Hebrew works from a list of phrases you teach Chaplin.">
+          <Segmented
+            value={language}
+            onChange={setLanguage}
+            options={[
+              { value: "en", label: "English", testID: "lang-en" },
+              { value: "he", label: "עברית", testID: "lang-he" },
+            ]}
+          />
+        </Section>
+
+        {language === "he" && (
+          <Section title="🗣️ My phrases" hint="Pick a phrase, mouth it three times, and Chaplin learns how you say it.">
+            <PhraseBank />
+          </Section>
+        )}
 
         <Section title="🎙️ Voice" hint="This is how Chaplin will speak for you.">
           <VoicePicker />
