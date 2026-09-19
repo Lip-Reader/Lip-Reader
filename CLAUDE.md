@@ -20,6 +20,8 @@ speaks it. Product: [PRD.md](PRD.md). Visual system: [app/DESIGN.md](app/DESIGN.
    mechanical tasks (renames, formatting, boilerplate).
 7. **UI.** Follow [app/DESIGN.md](app/DESIGN.md) when creating or reviewing screens.
 8. **Verify end to end after big changes** (commands below) and report real results.
+9. **Writing style.** Docs and pages in plain language, no jargon; use industry
+   and technical terms only where they are the precise word.
 
 ## Layout
 ```
