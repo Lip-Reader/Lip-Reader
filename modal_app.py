@@ -47,7 +47,7 @@ image = (
     )
     .workdir(REMOTE_ROOT)
     .add_local_dir("backend", remote_path=f"{REMOTE_ROOT}/backend",
-                   ignore=["**/__pycache__", "storage"])
+                   ignore=["**/__pycache__", "storage", "tests"])
     .add_local_dir("assets", remote_path=f"{REMOTE_ROOT}/assets")
 )
 

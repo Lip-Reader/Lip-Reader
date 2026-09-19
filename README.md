@@ -25,8 +25,8 @@ camera clip ─▶ vsr (Auto-AVSR) ─▶ correct ─▶ sentence ─▶ Speak (
 | `backend/app/agent/` | Single-pass corrector agent (LangChain `create_agent`). |
 | `backend/app/auth.py` · `admin.py` · `db.py` | Clerk JWT verification + admin role check, admin router, Supabase Postgres store. |
 | `backend/pipelines/`, `backend/espnet/` | Vendored VSR internals (upstream, not rewritten). |
-| `assets/`   | Brand images, VSR config, test-video ground truths, `architecture.png`. |
-| `tests/`    | Eval suite (word-overlap F1) for the clip → agent path. |
+| `assets/`   | VSR config, test-video ground truths, `architecture.png`. |
+| `backend/tests/`, `app/e2e/` | Backend pytest suite + `e2e_check.py`; Playwright flows for the app. |
 
 **Privacy:** uploaded clips are processed in a temp file and deleted immediately
 after inference. Video is never persisted; only text leaves the device (run text
@@ -61,6 +61,12 @@ public metadata `{ "role": "admin" }` (set in the Clerk dashboard).
 ## Run it
 
 ```bash
+./dev-up.sh   # API backend :8000, VSR service :8001 (needs weights), web app :5173
+```
+
+Or by hand:
+
+```bash
 uv sync
 uv run uvicorn backend.app.main:app --port 8000        # API backend
 uv run uvicorn backend.app.vsr_main:app --port 8001    # VSR service (needs weights)
@@ -73,8 +79,8 @@ needs a development build: `npx expo run:ios`).
 ## Verify
 
 ```bash
-uv run python backend/e2e_check.py          # every backend stage, PASS/FAIL
-uv run --extra test pytest tests/ -v -s     # eval suite
+uv run python backend/tests/e2e_check.py    # every backend stage, PASS/FAIL
+uv run --extra test pytest backend/tests -v -s  # agent tests + clip eval (needs weights/clips)
 cd app && npm run typecheck && npm run e2e  # types (web + native), Playwright flows
 cd app && npm run shots                     # screenshots → app/screenshots/
 ```

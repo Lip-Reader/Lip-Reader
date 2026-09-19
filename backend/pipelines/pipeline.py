@@ -14,7 +14,7 @@ from pipelines.data.data_module import AVSRDataLoader
 
 
 class InferencePipeline(torch.nn.Module):
-    def __init__(self, config_filename, detector="retinaface", face_track=False, device="cpu"):
+    def __init__(self, config_filename, detector="mediapipe", face_track=False, device="cpu"):
         super(InferencePipeline, self).__init__()
         assert os.path.isfile(config_filename), f"config_filename: {config_filename} does not exist."
 
@@ -40,8 +40,6 @@ class InferencePipeline(torch.nn.Module):
         self.model = AVSR(modality, model_path, model_conf, rnnlm, rnnlm_conf, penalty, ctc_weight, lm_weight, beam_size, device)
         # Built on first use, not here: mediapipe opens a GPU/EGL context even when
         # torch is on CPU, which fails a CPU-only memory snapshot.
-        self._detector = detector
-        self._device = device
         self._face_track = face_track
         self.landmarks_detector = None
 
@@ -51,12 +49,8 @@ class InferencePipeline(torch.nn.Module):
             return
         if not self._face_track or self.modality not in ["video", "audiovisual"]:
             return
-        if self._detector == "mediapipe":
-            from pipelines.detectors.mediapipe.detector import LandmarksDetector
-            self.landmarks_detector = LandmarksDetector()
-        if self._detector == "retinaface":
-            from pipelines.detectors.retinaface.detector import LandmarksDetector
-            self.landmarks_detector = LandmarksDetector(device=str(self._device))
+        from pipelines.detectors.mediapipe.detector import LandmarksDetector
+        self.landmarks_detector = LandmarksDetector()
 
 
     def process_landmarks(self, data_filename, landmarks_filename):

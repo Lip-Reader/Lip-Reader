@@ -9,6 +9,7 @@ on:
     paths:
       - "modal_app.py"
       - "backend/**"
+      - "!backend/tests/**"
       - "assets/configs/**"
       - ".github/workflows/modal-deploy.yml"
   workflow_dispatch:

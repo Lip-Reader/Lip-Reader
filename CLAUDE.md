@@ -1,89 +1,74 @@
 # CLAUDE.md — Chaplin AI
 
-Guidance for Claude Code in this repo. See [PRD.md](PRD.md) for the product and
-[app/DESIGN.md](app/DESIGN.md) for the visual system.
+Chaplin AI lets non-vocal, ventilated patients talk: the app records a short
+camera clip, a VSR model lip-reads it, one LLM call corrects the text, and TTS
+speaks it. Product: [PRD.md](PRD.md). Visual system: [app/DESIGN.md](app/DESIGN.md).
 
-**Chaplin AI** helps non-vocal, ventilated patients communicate: it lip-reads them
-and speaks the result back in a representative voice. It began as a fork of the
-`chaplin` repo (a lip-reading model + LLM corrector) and is evolving into an
-**agent** whose job is *reliable* communication.
+## Rules (MUST follow)
+1. **Plan before implementing.** For large or ambiguous work, ask before coding.
+2. **Think before coding.** State assumptions; present competing interpretations
+   instead of picking one silently; say when a simpler approach exists; push back.
+3. **Simplicity first.** Minimum code for the ask: no extra features, no
+   single-use abstractions, no speculative flexibility, no impossible-case error
+   handling. If 200 lines could be 50, rewrite it.
+4. **Surgical changes.** Touch only what the request needs. Don't reformat or
+   "improve" adjacent code; match existing style; mention unrelated dead code
+   instead of deleting it. Remove only orphans your own change created.
+5. **Subagents.** Parallelize independent steps of big features; keep dependent
+   or same-file work inline.
+6. **Model selection.** Most capable model for complex work; lighter models for
+   mechanical tasks (renames, formatting, boilerplate).
+7. **UI.** Follow [app/DESIGN.md](app/DESIGN.md) when creating or reviewing screens.
+8. **Verify end to end after big changes** (commands below) and report real results.
+9. **Writing style.** Docs and pages in plain language, no jargon; use industry
+   and technical terms only where they are the precise word.
 
-## Architecture (high level)
+## Layout
 ```
-camera ─▶ short clip ─▶ POST /api/execute_lips (vsr_lip_reader, Modal GPU)
-                              │  vsr (Auto-AVSR) ─▶ correct (single LLM call)
-                              ▼
-                sentence on screen ─▶ Speak ─▶ POST /speak (Inworld TTS)
+app/                Expo app (Expo Router; iOS, Android, web). app/app/*.tsx = routes,
+                    app/src/features/* = screens, app/src/ui = glass UI kit, app/e2e = Playwright.
+backend/app/        FastAPI code. main.py = API backend (TTS, settings, support, runs,
+                    admin, workshop metadata); vsr_main.py = VSR service (/api/execute_lips);
+                    agent/ = LangChain corrector; auth.py (Clerk), db.py (Supabase), tts.py (Inworld).
+backend/pipelines/  Vendored Auto-AVSR inference (mediapipe face crop -> model -> beam search).
+backend/espnet/     Vendored ESPnet transformer/beam-search internals used by pipelines/. Upstream: don't edit.
+backend/tests/      pytest (agent tests, clip eval) + e2e_check.py (every /api stage, PASS/FAIL).
+assets/             VSR config (configs/), test-clip ground truths, architecture.png.
+api/index.py        Vercel entry for backend/app/main.py.   modal_app.py: Modal deploy of the VSR service.
 ```
-- Three services:
-  1. **App** (`app/`) — one Expo app (Expo Router, React Native + react-native-web)
-     for iOS, Android and web. The web export (`npx expo export -p web` → `app/dist`)
-     is hosted on Vercel. The device owns the camera; only text leaves it.
-  2. **API backend** (`backend/app/main.py`, FastAPI, no torch) — voices/TTS,
-     settings, support, run log, admin API, workshop metadata. On Vercel as a
-     Python function (`api/index.py`, deps from root `requirements.txt`).
-  3. **vsr_lip_reader** (`backend/app/vsr_main.py`) — `POST /api/execute_lips` +
-     `/health` only (clip → VSR → corrector). On Modal (`modal_app.py`), local
-     dev port 8001 (launch config `chaplin-vsr`). Unchanged by the app rewrite.
-- **Auth**: Clerk (`@clerk/expo` in the app, `clerk-backend-api` in
-  `backend/app/auth.py`). Guests can use everything; signing in only syncs
-  settings across devices. **Admin** = Clerk user with public metadata
-  `{ "role": "admin" }` (checked server-side in `auth.require_admin`, cached 60 s).
-  Missing publishable key → guest-only build; missing `CLERK_SECRET_KEY` →
-  authenticated routes return 503.
-- **Settings store** (`app/src/features/settings/settingsStore.tsx`): guests keep
-  `{ voice_id }` on the device (localStorage / SecureStore); members read/write
-  `GET|PUT /api/me/settings`, with the local copy as cache. First sign-in pushes a
-  local choice to the server.
-- **Database** (Supabase Postgres, `backend/app/db.py`): `user_settings`,
-  `app_settings` (`default_voice_id`, `lip_reading_enabled`), `support_messages`,
-  `audit_log`, `runs` (text only, never video). `GET /api/db_ping` is hit every
-  5 min by `.github/workflows/db-keepalive.yml` so the free tier never pauses.
-- **Screens** (`app/app/*.tsx` routes → `app/src/features/*`):
-  `/` landing (Try now / Log in), `/talk` full-screen camera with Talk/Stop/Speak,
-  a fixed Settings icon (top-left) and, for admins, an Admin icon (top-right);
-  `/settings` voice picker + account + feedback; `/sign-in` (Clerk `SignIn` on
-  web, email-code flow on native); `/admin` left rail (≥1024 px) or top tabs with
-  Overview, Users, Logs & audit, Settings, Support, Info.
-- Platform splits live only in `recorder.web.tsx` / `recorder.native.tsx`
-  (MediaRecorder vs expo-camera), `speaker.web.ts` / `speaker.native.ts`
-  (HTMLAudioElement vs expo-audio), `storage.*.ts` and `SignInScreen.*.tsx`.
-  `tsconfig.json` resolves `.web`, `tsconfig.native.json` resolves `.native`.
-- Agent: `backend/app/agent/` — `agent.py` (LangChain `create_agent`, single
-  `correct` call, ChatAnthropic), `prompts.py`. `run_agent(raw, conversation)`
-  keeps its optional history argument for the eval suite.
-- VSR model: `backend/pipelines/`; vendored `backend/espnet/` — treat as upstream.
-- Assets (brand, VSR config, test-video ground truths, architecture.png): `assets/`
-- Eval / checks: `tests/` (pytest), `backend/e2e_check.py`, `app/e2e/` (Playwright).
 
-## How to work here
-- **Scan the relevant files and plan before any large refactor.**
-- **Make the simplest change that works.** Smallest diff, no speculative
-  abstractions, no code comments unless they prevent a real mistake.
-- **For agent/LLM work, follow current LangChain / LangGraph docs.**
-- **For Clerk work, check the installed `@clerk/expo` types** (`node_modules/@clerk/expo`);
-  the CLI-installed skills under `~/.agents/skills/clerk-*` describe the current API.
-- **After each big change, verify end to end** and report real results:
-  ```bash
-  uv run python backend/e2e_check.py           # every /api/* stage, PASS/FAIL
-  uv run --extra test pytest tests/ -v -s      # eval suite (needs ANTHROPIC_API_KEY)
-  cd app && npm run typecheck                  # web + native type check
-  cd app && npm run e2e                        # Playwright (guest + admin flows)
-  cd app && npm run shots                      # screenshots → app/screenshots/
-  ```
-  Playwright needs a real camera sandbox: run it outside the Claude sandbox
-  (fake media devices hang inside it). `npm run e2e` starts two Expo web servers
-  (5173 guest build, 5174 with `EXPO_PUBLIC_FORCE_ADMIN=1`, dev-only flag).
-- Local dev: `.claude/launch.json` has `chaplin-web` (Expo web on 5173),
-  `chaplin-api` (8000) and `chaplin-vsr` (8001).
+## How it runs
+- **Three services:** the app (Vercel static export), the API backend (Vercel
+  Python function, deps in `requirements.txt`, no torch) and the VSR service
+  (Modal GPU, `modal_app.py`; local port 8001). The device owns the camera; only
+  text leaves it. Video is deleted right after inference.
+- **Auth:** Clerk. Guests can use everything; sign-in only syncs `{ voice_id }`
+  via `GET|PUT /api/me/settings`. Admin = Clerk public metadata `{ "role": "admin" }`
+  (`auth.require_admin`). No publishable key → guest-only build; no
+  `CLERK_SECRET_KEY` → authenticated routes return 503.
+- **Database:** Supabase Postgres (`backend/app/db.py`): `user_settings`,
+  `app_settings`, `support_messages`, `audit_log`, `runs` (text only).
+  `.github/workflows/db-keepalive.yml` pings `/api/db_ping` every 5 min.
+- **Platform splits** live only in `*.web.tsx` / `*.native.tsx` files
+  (recorder, speaker, storage, SignInScreen).
+- **Agent:** `backend/app/agent/agent.py`, single `correct` call via LangChain
+  `create_agent`; `run_agent(raw, conversation)` keeps the history argument for evals.
+
+## Commands
+```bash
+./dev-up.sh                                   # API :8000, VSR :8001, web :5173
+uv run python backend/tests/e2e_check.py      # every /api stage, PASS/FAIL
+uv run --extra test pytest backend/tests -v -s  # agent tests (ANTHROPIC_API_KEY), clip eval (weights + .mov clips)
+cd app && npm run typecheck                   # web + native
+cd app && npm run e2e                         # Playwright; run outside the Claude sandbox
+cd app && npm run shots                       # screenshots -> app/screenshots/
+```
+Launch configs: `.claude/launch.json` (`chaplin-web`, `chaplin-api`, `chaplin-vsr`).
 
 ## Conventions
-- Package managers: **uv** (Python) and **npm** in `app/`. Use `npx expo install`
-  for Expo packages so versions stay SDK-compatible.
-- Secrets in `.env` (gitignored): `ANTHROPIC_API_KEY`, `DATABASE_URL`,
-  `CLERK_SECRET_KEY`, optional `INWORLD_API_KEY` / `INWORLD_VOICE_ID`,
-  `VSR_API_BASE`. App: `app/.env.local` with `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`
-  (Vercel needs the same variable). Never commit secrets; never print env files.
-- Model weights under `benchmarks/LRS3/` and temp clips are not in git.
-- Privacy: video stays on the device and is deleted after inference; only text is
-  stored (`runs`, `support_messages`).
+- **uv** for Python, **npm** in `app/`; `npx expo install` for Expo packages.
+- Secrets in `.env` (`ANTHROPIC_API_KEY`, `DATABASE_URL`, `CLERK_SECRET_KEY`,
+  `INWORLD_API_KEY`) and `app/.env.local` (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`).
+  Never commit or print them.
+- Model weights (`benchmarks/LRS3/`) and test clips (`.mov`) are gitignored.
+- For Clerk, check the installed `@clerk/expo` types; for LangChain, current docs.

@@ -1,50 +1,33 @@
-"""End-to-end tests using recorded video clips with ground truth transcripts.
+"""Eval suite: recorded clips with ground-truth transcripts.
 
-Runs each clip through Auto-AVSR InferencePipeline -> Claude free-form correction,
-then compares corrected text to ground truth using word-level F1.
-
-Designed for pytest-xdist: each video is a separate parametrized test item,
-distributed across workers. Use `pytest -n 4` for parallel execution.
+Each clip goes through the real product path (VSR model -> corrector agent) and
+the corrected text is scored against the ground truth with word-level F1.
+Needs the VSR weights and the (gitignored) .mov clips under assets/sravi_test_videos.
+Each clip is one parametrized test item, so `pytest -n 4` runs them in parallel.
 """
 
-import os
-import sys
 import json
-import asyncio
+import os
+
 import pytest
-import anthropic
-from dotenv import load_dotenv
 
-load_dotenv()
+from backend.app import config, vsr
+from backend.app.agent import run_agent
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
-sys.path.insert(0, _REPO_ROOT)
-sys.path.insert(0, os.path.join(_REPO_ROOT, "backend"))  # vendored pipelines/espnet
-
-CONFIG_PATH = os.path.join(_REPO_ROOT, "assets", "configs", "LRS3_V_WER19.1.ini")
-SRAVI_DIR = os.path.join(_REPO_ROOT, "assets", "sravi_test_videos")
-
-HAS_CONFIG = os.path.isfile(CONFIG_PATH)
-HAS_SRAVI = os.path.isdir(SRAVI_DIR)
-
+SRAVI_DIR = config.REPO_ROOT / "assets" / "sravi_test_videos"
 MIN_OVERLAP = 0.9
 
 
 def _load_all_test_cases():
-    """Walk SRAVI subdirs, load each ground_truth.json, return (label, path, expected) triples."""
     cases = []
-    if not os.path.isdir(SRAVI_DIR):
+    if not SRAVI_DIR.is_dir():
         return cases
     for category in sorted(os.listdir(SRAVI_DIR)):
-        cat_dir = os.path.join(SRAVI_DIR, category)
-        gt_path = os.path.join(cat_dir, "ground_truth.json")
-        if not os.path.isfile(gt_path):
+        gt_path = SRAVI_DIR / category / "ground_truth.json"
+        if not gt_path.is_file():
             continue
-        with open(gt_path) as f:
-            gt = json.load(f)
-        for fname, expected in gt.items():
-            video_path = os.path.join(cat_dir, fname)
-            cases.append(pytest.param(video_path, expected, id=f"{category}/{fname}"))
+        for fname, expected in json.loads(gt_path.read_text()).items():
+            cases.append(pytest.param(SRAVI_DIR / category / fname, expected, id=f"{category}/{fname}"))
     return cases
 
 
@@ -103,49 +86,26 @@ def llm_change_rate(raw_top1, corrected):
     return changed / len(raw)
 
 
-@pytest.fixture(scope="session")
-def pipeline():
-    from pipelines.pipeline import InferencePipeline
-    return InferencePipeline(CONFIG_PATH, detector="mediapipe", face_track=True, device="cpu")
-
-
-@pytest.fixture(scope="session")
-def llm_client():
-    return anthropic.Anthropic()
-
-
 skip_reason = (
-    "Auto-AVSR config not found" if not HAS_CONFIG
-    else "SRAVI test videos not found" if not HAS_SRAVI
+    "Auto-AVSR config not found" if not os.path.isfile(config.VSR_CONFIG)
+    else "SRAVI test videos not found" if not SRAVI_DIR.is_dir()
     else None
 )
 
 
 @pytest.mark.skipif(skip_reason is not None, reason=skip_reason or "")
 @pytest.mark.parametrize("video_path,expected", ALL_CASES)
-def test_video(video_path, expected, pipeline, llm_client, results_collector):
-    """Test a single video through the full pipeline."""
-    from backend.app.agent.prompts import SYSTEM_PROMPT as LLM_SYSTEM_PROMPT
-
-    if not os.path.isfile(video_path):
+def test_video(video_path, expected, results_collector):
+    if not video_path.is_file():
         pytest.skip(f"Video not found: {video_path}")
 
-    raw_top1 = pipeline(video_path)
-
-    response = llm_client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1024,
-        system=LLM_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": f"Transcription:\n\n{raw_top1}"}],
-    )
-    corrected = response.content[0].text.strip()
+    vsr.get_model(device="cpu")
+    raw_top1 = vsr.transcribe_clip(str(video_path))
+    corrected = run_agent(raw_top1)["response"]
 
     raw_overlap = word_overlap_ratio(raw_top1, expected)
     corrected_overlap = word_overlap_ratio(corrected, expected)
-    change_rate = llm_change_rate(raw_top1, corrected)
-    improvement = corrected_overlap - raw_overlap
-
-    label = video_path.split("sravi_test_videos/")[-1] if "sravi_test_videos/" in video_path else video_path
+    label = str(video_path.relative_to(SRAVI_DIR))
     print(
         f"\n[{label}]"
         f"\n  Expected:      {expected}"
@@ -154,8 +114,8 @@ def test_video(video_path, expected, pipeline, llm_client, results_collector):
         f"\n  ---"
         f"\n  Raw overlap:       {raw_overlap:.0%}"
         f"\n  Corrected overlap: {corrected_overlap:.0%}"
-        f"\n  LLM improvement:   {improvement:+.0%}"
-        f"\n  LLM changed:       {change_rate:.0%} of words"
+        f"\n  LLM improvement:   {corrected_overlap - raw_overlap:+.0%}"
+        f"\n  LLM changed:       {llm_change_rate(raw_top1, corrected):.0%} of words"
     )
 
     results_collector.append({

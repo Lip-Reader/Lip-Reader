@@ -5,16 +5,10 @@ given), so a context-implausible word must be fixed to a visually similar one
 on that one call - and a correction that already fits must not be second-guessed.
 """
 
-import os
-import sys
-
 import pytest
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
-sys.path.insert(0, _REPO_ROOT)
-
-from backend.app.agent import run_agent  # noqa: E402
-from backend.app import config  # noqa: E402
+from backend.app import config
+from backend.app.agent import run_agent
 
 pytestmark = pytest.mark.skipif(
     not config.ANTHROPIC_API_KEY, reason="ANTHROPIC_API_KEY not configured"
