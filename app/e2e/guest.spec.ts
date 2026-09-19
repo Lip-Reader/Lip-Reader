@@ -74,7 +74,7 @@ test("hebrew: language toggle shows the phrase list and persists locally", async
   await page.getByTestId("lang-he").click();
   await expect(page.getByTestId("group-pain")).toBeVisible();
   await expect(page.getByTestId("phrase-basics_yes")).toBeVisible();
-  await expect(page.getByTestId("phrase-progress")).toHaveText(/1 of 100 phrases taught/);
+  await expect(page.getByTestId("phrase-progress")).toHaveText(/1 מתוך 100 משפטים נלמדו/);
   await page.getByTestId("group-pain").click();
   await expect(page.getByTestId("phrase-pain_hurts")).toContainText("2/3");
   await page.getByTestId("phrase-search").fill("צמא");
@@ -98,18 +98,21 @@ test("hebrew: enrolling a phrase sends the take and updates the badge", async ({
   await page.goto("/settings");
   await page.getByTestId("group-pain").click();
   await page.getByTestId("phrase-pain_hurts").click();
+  await expect(page.getByTestId("enroll-back")).toBeVisible();
   await expect(page.getByTestId("enroll-phrase")).toHaveText("כואב לי");
-  await expect(page.getByTestId("enroll-status")).toHaveText(/Take 3 of 3/);
+  await expect(page.getByTestId("enroll-status")).toHaveText(/לקיחה 3 מתוך 3/);
+  const previewBox = await page.locator("video").first().boundingBox();
+  expect(previewBox?.height ?? 0).toBeGreaterThanOrEqual(380);
   const record = page.getByTestId("enroll-record");
   await expect(record).toBeEnabled();
   await record.click();
   await page.waitForTimeout(600);
   await page.getByTestId("enroll-stop").click();
-  await expect(page.getByTestId("enroll-status")).toHaveText(/Taught with 3 takes/);
+  await expect(page.getByTestId("enroll-status")).toHaveText(/נלמד עם 3 הקלטות/);
   expect(enrolls).toHaveLength(1);
   expect(enrolls[0]).toContain('name="patient_key"\r\n\r\ntest-patient-key');
   expect(enrolls[0]).toContain('name="phrase_id"\r\n\r\npain_hurts');
-  await page.getByTestId("enroll-done").click();
+  await page.getByTestId("enroll-back").click();
   await expect(page.getByTestId("phrase-pain_hurts")).toContainText("3/3");
 });
 
@@ -134,6 +137,28 @@ test("hebrew: talk shows candidates when unsure and speaks the chosen one", asyn
   await page.getByTestId("speak-button").click();
   await expect(page.getByTestId("sentence")).toHaveText("כואב לי הראש");
   expect(runs).toEqual([expect.objectContaining({ corrected: "כואב לי הראש", raw: expect.stringContaining("pain_hurts:0.31") })]);
+
+  await expect(page.getByTestId("reset-button")).toBeVisible();
+  await page.getByTestId("reset-button").click();
+  await expect(page.getByTestId("sentence")).toHaveCount(0);
+  await expect(page.getByTestId("reset-button")).toHaveCount(0);
+  await expect(page.getByTestId("talk-button")).toHaveText("דבר");
+});
+
+test("hebrew: buttons and chrome text switch to Hebrew", async ({ page }) => {
+  await page.addInitScript((s) => localStorage.setItem("chaplin_settings", JSON.stringify(s)), HEBREW_SETTINGS);
+  await page.goto("/settings");
+  await expect(page.getByText("הגדרות").first()).toBeVisible();
+  await expect(page.getByText("🎙️ קול")).toBeVisible();
+  await expect(page.getByText("💬 משוב")).toBeVisible();
+
+  await page.goto("/talk");
+  await expect(page.getByTestId("talk-button")).toHaveText("דבר");
+  await page.getByTestId("talk-button").click();
+  await page.waitForTimeout(600);
+  await page.getByTestId("stop-button").click();
+  await page.getByTestId("candidate-1").click();
+  await expect(page.getByTestId("speak-button")).toContainText("השמע");
 });
 
 test("flip camera switches to the back camera and remembers it", async ({ page }) => {

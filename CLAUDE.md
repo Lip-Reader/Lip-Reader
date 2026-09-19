@@ -48,6 +48,10 @@ api/index.py        Vercel entry for backend/app/main.py.   modal_app.py: Modal 
   (`vsr.extract_features`) against per-patient templates (`phrase_templates`, keyed by
   a device-generated `patient_key`) with DTW; unsure results return top-3 `candidates`
   that the Talk screen shows as buttons. English requests never enter this branch.
+- **UI language:** `app/src/lib/i18n.ts` holds every chrome string (buttons, headers, hints,
+  toasts) in English and Hebrew; screens call `t(language, key)` so choosing Hebrew in Settings
+  relabels the whole app, not just the phrase content. The Talk screen's Reset button (shown once
+  a result or candidates are on screen) clears them and returns to idle.
 - **Auth:** Clerk. Guests can use everything; sign-in only syncs
   `{ voice_id, language, gender, patient_key }` via `GET|PUT /api/me/settings`. Admin = Clerk public metadata `{ "role": "admin" }`
   (`auth.require_admin`). No publishable key → guest-only build; no

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { enrollPhrase, getPhrases, getPhraseTemplates, Phrase, PhraseBank as Bank } from "../../lib/api";
-import { GlassButton } from "../../ui";
+import { GlassButton, IconButton } from "../../ui";
 import { colors, fontFamily, radius } from "../../ui/theme";
 import { CameraPreview, RecorderProvider, useRecorder } from "../talk/recorder";
 import Segmented from "./Segmented";
@@ -26,7 +26,7 @@ export default function PhraseBank() {
         setBank(b);
         setGroup(b.groups[0]?.id ?? "");
       })
-      .catch(() => setError("Couldn't load the phrase list."));
+      .catch(() => setError("לא ניתן היה לטעון את רשימת המשפטים."));
   }, []);
 
   useEffect(() => {
@@ -78,7 +78,7 @@ export default function PhraseBank() {
         ]}
       />
       <Text style={styles.muted} testID="phrase-progress">
-        {taught} of {bank.phrases.length} phrases taught{storageOn ? "" : " · saving is off on this server"}
+        {taught} מתוך {bank.phrases.length} משפטים נלמדו{storageOn ? "" : " · השמירה כבויה בשרת הזה"}
       </Text>
       <TextInput
         value={query}
@@ -116,7 +116,7 @@ export default function PhraseBank() {
             </Pressable>
           );
         })}
-        {shown.length === 0 && <Text style={styles.muted}>No phrases match.</Text>}
+        {shown.length === 0 && <Text style={styles.muted}>לא נמצאו משפטים תואמים.</Text>}
       </ScrollView>
     </View>
   );
@@ -156,7 +156,7 @@ function EnrollPanel({
       setCount(r.takes);
       onTake(r.takes);
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : "Couldn't save that take. Try again.");
+      setError(e instanceof Error && e.message ? e.message : "לא ניתן היה לשמור את ההקלטה. נסו שוב.");
     }
     setState("idle");
   }
@@ -164,6 +164,10 @@ function EnrollPanel({
   const next = Math.min(count, TARGET) + 1;
   return (
     <View style={{ gap: 12 }}>
+      <View style={styles.enrollHeader}>
+        <IconButton name="chevron-back" label="חזרה" onPress={onDone} testID="enroll-back" />
+        <Text style={styles.enrollHeaderTitle}>המשפטים שלי</Text>
+      </View>
       <View style={styles.preview}>
         <CameraPreview />
       </View>
@@ -171,13 +175,13 @@ function EnrollPanel({
         {text}
       </Text>
       <Text style={styles.muted} testID="enroll-status">
-        {count >= TARGET ? `Taught with ${count} takes. Add another or finish.` : `Take ${next} of ${TARGET}. Mouth the phrase, then stop.`}
+        {count >= TARGET ? `נלמד עם ${count} הקלטות. אפשר להוסיף עוד או לסיים.` : `לקיחה ${next} מתוך ${TARGET}. בטאו את המשפט, ואז עצרו.`}
       </Text>
       {(error || recorder.error) && <Text style={styles.error}>{error || recorder.error}</Text>}
-      {state === "idle" && <GlassButton label="Record" variant="primary" onPress={start} disabled={!recorder.ready} testID="enroll-record" />}
-      {state === "recording" && <GlassButton label="Stop" variant="danger" onPress={stop} testID="enroll-stop" />}
+      {state === "idle" && <GlassButton label="הקלטה" variant="primary" onPress={start} disabled={!recorder.ready} testID="enroll-record" />}
+      {state === "recording" && <GlassButton label="עצור" variant="danger" onPress={stop} testID="enroll-stop" />}
       {state === "uploading" && <ActivityIndicator color={colors.accent} />}
-      <GlassButton label="Done" onPress={onDone} testID="enroll-done" />
+      <GlassButton label="סיום" onPress={onDone} testID="enroll-done" />
     </View>
   );
 }
@@ -218,6 +222,8 @@ const styles = StyleSheet.create({
   badgeTextDone: { color: colors.white },
   phrase: { flex: 1, fontSize: 17, fontWeight: "500", color: colors.text, fontFamily },
   seed: { fontSize: 11, color: colors.accent, fontFamily },
-  preview: { height: 220, borderRadius: radius.md, overflow: "hidden", backgroundColor: "#000" },
+  enrollHeader: { flexDirection: "row-reverse", alignItems: "center", gap: 10 },
+  enrollHeaderTitle: { fontSize: 16, fontWeight: "600", color: colors.text, fontFamily },
+  preview: { height: 420, borderRadius: radius.md, overflow: "hidden", backgroundColor: "#000" },
   bigPhrase: { fontSize: 28, fontWeight: "600", color: colors.text, fontFamily, lineHeight: 36 },
 });

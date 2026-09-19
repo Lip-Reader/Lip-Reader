@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Candidate, executeLips, getPublicSettings, logRun, pingVsr, vsrAvailable } from "../../lib/api";
 import { useSession } from "../../lib/auth";
+import { t } from "../../lib/i18n";
 import { Background, FixedControls, GlassButton, GlassPanel, IconButton, Toast } from "../../ui";
 import { absoluteFill, colors, fontFamily } from "../../ui/theme";
 import { useSettings } from "../settings/settingsStore";
@@ -69,8 +70,16 @@ function Talk() {
   async function talk() {
     speaker.reset();
     setText("");
-    if (!(await recorder.start())) return setToast("Camera is not ready yet.");
+    setCandidates([]);
+    if (!(await recorder.start())) return setToast(t(language, "cameraNotReady"));
     setPhase("recording");
+  }
+
+  function reset() {
+    speaker.reset();
+    setText("");
+    setCandidates([]);
+    setPhase("idle");
   }
 
   async function stop() {
@@ -94,10 +103,10 @@ function Talk() {
       const known = e instanceof Error && e.message && !e.message.startsWith("/api/");
       setToast(
         !(await vsrAvailable())
-          ? "The lip-reading service is unavailable right now."
+          ? t(language, "vsrUnavailableToast")
           : known
             ? (e as Error).message
-            : "Something went wrong. Tap Talk to try again."
+            : t(language, "genericErrorToast")
       );
       setPhase("idle");
     }
@@ -119,17 +128,20 @@ function Talk() {
       {dim && <View style={styles.dim} />}
 
       <FixedControls>
-        <IconButton name="settings-outline" label="Settings" onPress={() => router.push("/settings")} testID="settings-button" />
+        <IconButton name="settings-outline" label={t(language, "settingsLabel")} onPress={() => router.push("/settings")} testID="settings-button" />
         <View style={styles.rightControls}>
+          {(phase === "review" || phase === "choose") && (
+            <IconButton name="refresh-outline" label={t(language, "resetLabel")} onPress={reset} testID="reset-button" />
+          )}
           <IconButton
             name="camera-reverse-outline"
-            label="Flip camera"
+            label={t(language, "flipCameraLabel")}
             onPress={recorder.flip}
             disabled={phase === "recording"}
             testID="flip-camera-button"
           />
           {session.isAdmin && (
-            <IconButton name="shield-checkmark-outline" label="Admin" onPress={() => router.push("/admin")} testID="admin-button" />
+            <IconButton name="shield-checkmark-outline" label={t(language, "adminLabel")} onPress={() => router.push("/admin")} testID="admin-button" />
           )}
         </View>
       </FixedControls>
@@ -139,7 +151,7 @@ function Talk() {
       {phase === "recording" && (
         <View style={[styles.pill, { top: insets.top + 64 }]}>
           <View style={styles.dot} />
-          <Text style={styles.pillText}>Listening · {mmss}</Text>
+          <Text style={styles.pillText}>{t(language, "listeningLabel")} · {mmss}</Text>
         </View>
       )}
 
@@ -154,11 +166,11 @@ function Talk() {
       {phase === "choose" && (
         <View style={styles.sentenceBox}>
           <View style={styles.chooseBox}>
-            <Text style={styles.chooseTitle}>Which one?</Text>
+            <Text style={styles.chooseTitle}>{t(language, "whichOne")}</Text>
             {candidates.map((c, i) => (
               <GlassButton key={c.id} label={c.text} onPress={() => choose(c)} testID={`candidate-${i}`} />
             ))}
-            <GlassButton label="None of these" variant="danger" onPress={() => setPhase("idle")} testID="candidate-none" />
+            <GlassButton label={t(language, "noneOfThese")} variant="danger" onPress={() => setPhase("idle")} testID="candidate-none" />
           </View>
         </View>
       )}
@@ -183,42 +195,42 @@ function Talk() {
           <GlassPanel style={styles.errorPanel}>
             <Ionicons name="videocam-off-outline" size={34} color={colors.accent} style={{ alignSelf: "center" }} />
             <Text style={styles.errorText}>{recorder.error}</Text>
-            <GlassButton label="Retry" variant="primary" onPress={recorder.retry} />
+            <GlassButton label={t(language, "retryLabel")} variant="primary" onPress={recorder.retry} />
           </GlassPanel>
         </View>
       )}
 
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
-        {paused && <Text style={styles.paused}>Lip reading is paused by the admin.</Text>}
+        {paused && <Text style={styles.paused}>{t(language, "pausedLabel")}</Text>}
         {!paused && warm === "warming" && (
-          <Text style={styles.paused} testID="warming-note">Waking the lip-reading model up…</Text>
+          <Text style={styles.paused} testID="warming-note">{t(language, "warmingLabel")}</Text>
         )}
         {!paused && warm === "unavailable" && (
-          <Text style={styles.paused} testID="unavailable-note">The lip-reading service is not responding.</Text>
+          <Text style={styles.paused} testID="unavailable-note">{t(language, "unavailableLabel")}</Text>
         )}
         {speaker.error && <Text style={styles.paused}>{speaker.error}</Text>}
 
         {phase === "idle" && !recorder.error && (
-          <GlassButton label="Talk" onPress={talk} disabled={paused || !recorder.ready || !settingsReady} icon={<RecordDot />} testID="talk-button" />
+          <GlassButton label={t(language, "talkLabel")} onPress={talk} disabled={paused || !recorder.ready || !settingsReady} icon={<RecordDot />} testID="talk-button" />
         )}
         {phase === "recording" && (
-          <GlassButton label="Stop" variant="danger" onPress={stop} icon={<Ionicons name="stop" size={18} color={colors.white} />} testID="stop-button" />
+          <GlassButton label={t(language, "stopLabel")} variant="danger" onPress={stop} icon={<Ionicons name="stop" size={18} color={colors.white} />} testID="stop-button" />
         )}
         {phase === "review" && speaker.phase !== "playing" && (
           <>
             <GlassButton
-              label={speaker.phase === "preparing" ? "Preparing…" : "Speak"}
+              label={speaker.phase === "preparing" ? t(language, "preparingLabel") : t(language, "speakLabel")}
               variant="primary"
               disabled={speaker.phase === "preparing"}
               onPress={() => speaker.play(text, voiceId)}
               icon={<Ionicons name="volume-high" size={20} color={colors.white} />}
               testID="speak-button"
             />
-            <GlassButton label="Talk" onPress={talk} icon={<RecordDot />} testID="talk-button" />
+            <GlassButton label={t(language, "talkLabel")} onPress={talk} icon={<RecordDot />} testID="talk-button" />
           </>
         )}
         {phase === "review" && speaker.phase === "playing" && (
-          <GlassButton label="Stop" variant="danger" onPress={speaker.stop} icon={<Ionicons name="stop" size={18} color={colors.white} />} />
+          <GlassButton label={t(language, "stopLabel")} variant="danger" onPress={speaker.stop} icon={<Ionicons name="stop" size={18} color={colors.white} />} />
         )}
       </View>
     </View>

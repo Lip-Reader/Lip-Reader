@@ -111,3 +111,9 @@ best matches are shown to tap. Optional speaker-independent templates can be shi
 `backend/tests/test_phrase_eval.py` on clips under `assets/hebrew_clips/<patient>/<phrase_id>/`.
 English is untouched: without `language=he` the service runs the same path as before, and
 `backend/tools/make_english_golden.py` pins its transcriptions for the regression test.
+
+When Hebrew is selected, every button and on-screen text in the app (Talk, Settings, the voice
+picker) switches to Hebrew via `app/src/lib/i18n.ts`; phrase content itself is Hebrew regardless
+of the toggle. The Talk screen also gets a Reset button (visible once a sentence or candidates are
+shown) that clears the result and returns to idle, and the phrase-enrollment panel in Settings is
+a full-size camera view with a back arrow to return to the phrase list.
