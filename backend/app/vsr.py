@@ -73,6 +73,24 @@ def transcribe_clip(video) -> str:
     return text
 
 
+def extract_features(video):
+    """Per-frame visual encoder features (T, 768) as float32 numpy, same face crop as
+    ``transcribe_clip`` but stopping before the English text decoder."""
+    model = get_model()
+    if not isinstance(video, str) and len(video) == 0:
+        raise NoFaceError("empty clip")
+    try:
+        landmarks = model.process_landmarks(video, None)
+        data = model.dataloader.load_data(video, landmarks)
+        feats = model.model.encode_features(data)
+    except AssertionError as e:  # mediapipe: no face found
+        raise NoFaceError(str(e)) from e
+    feats = feats.detach().cpu().float().numpy()
+    if len(feats) == 0:
+        raise NoSpeechError("empty clip")
+    return feats
+
+
 class NoFaceError(Exception):
     pass
 

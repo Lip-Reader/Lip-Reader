@@ -27,3 +27,7 @@ __pycache__/
 
 # uv
 uv.lock
+
+# Hebrew phrase mode: recorded clips and the built seed set stay local
+assets/hebrew_clips/
+assets/phrases/*_seed.npz

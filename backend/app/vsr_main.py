@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import config, vsr
+from . import config, phrases, vsr
 from .agent import run_agent
 
 logging.basicConfig(level=logging.INFO)
@@ -109,18 +109,83 @@ def health():
     return {"status": "ok", "vsr_available": not config.DISABLE_VSR}
 
 
-@app.post("/api/execute_lips")
-def execute_lips(file: UploadFile = File(...), conversation: str | None = Form(None)):
-    if config.DISABLE_VSR:
-        return _err("Lip-reading is not available on this deployment (the VSR model is too large for serverless).")
+def _save_upload(file: UploadFile) -> str:
     suffix = ".webm" if (file.content_type or "").endswith("webm") or (
         file.filename or ""
     ).endswith(".webm") else ".mp4"
     fd, path = tempfile.mkstemp(suffix=suffix)
+    with os.fdopen(fd, "wb") as f:
+        f.write(file.file.read())
+    return path
+
+
+def _template_store():
+    """db module if template storage is configured, else None (the VSR service may run without a database)."""
+    if not config.DATABASE_URL:
+        return None
+    from . import db
+    return db
+
+
+NO_STORE = "Template storage is not configured."
+NO_TEMPLATES = "No Hebrew phrases are enrolled yet. Teach a few phrases in Settings first."
+
+
+def _patient_templates(patient_key: str | None) -> dict:
+    store = _template_store()
+    if not store or not patient_key:
+        return {}
+    out: dict[str, list] = {}
+    for row in store.list_phrase_templates(patient_key):
+        out.setdefault(row["phrase_id"], []).append(
+            phrases.unpack(bytes(row["features"]), row["frames"], row["dim"])
+        )
+    return out
+
+
+def _recognise_phrase(frames, patient_key: str | None, gender: str) -> dict:
+    feats = phrases.downsample(vsr.extract_features(frames))
+    own = _patient_templates(patient_key)
+    seed = phrases.load_seed()
+    templates = phrases.merge_templates(own, seed)
+    if not templates:
+        return _err(NO_TEMPLATES)
+    ranked = phrases.rank(feats, templates)
+    confident = phrases.decide(ranked)
+    candidates = [
+        {"id": pid, "text": phrases.phrase_text(pid, gender), "score": round(score, 4)}
+        for pid, score in ranked[: phrases.TOP_K]
+    ]
+    steps = [
+        {"module": "vsr", "prompt": {"input": "<video clip>", "language": "he"},
+         "response": {"frames": int(feats.shape[0]), "dim": int(feats.shape[1])}},
+        {"module": "match", "prompt": {"templates": sum(len(t) for t in own.values()),
+                                       "seed": sum(len(t) for t in seed.values())},
+         "response": {"candidates": candidates, "confident": confident}},
+    ]
+    return {**_ok(candidates[0]["text"], steps), "confident": confident, "candidates": candidates}
+
+
+@app.post("/api/execute_lips")
+def execute_lips(
+    file: UploadFile = File(...),
+    conversation: str | None = Form(None),
+    language: str = Form("en"),
+    patient_key: str | None = Form(None),
+    gender: str = Form("m"),
+):
+    if config.DISABLE_VSR:
+        return _err("Lip-reading is not available on this deployment (the VSR model is too large for serverless).")
+    path = _save_upload(file)
     try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(file.file.read())
         frames = _decode_clip(path)
+        if language == "he":
+            try:
+                return _recognise_phrase(frames, patient_key, gender)
+            except vsr.NoFaceError:
+                return _err("No face detected in the clip. Please try again.")
+            except vsr.NoSpeechError:
+                return _err("Didn't catch any speech in the clip. Please try again.")
         try:
             raw = vsr.transcribe_clip(frames)
         except vsr.NoFaceError:
@@ -141,3 +206,56 @@ def execute_lips(file: UploadFile = File(...), conversation: str | None = Form(N
         # privacy: never persist video
         if os.path.exists(path):
             os.remove(path)
+
+
+@app.post("/api/enroll_phrase")
+def enroll_phrase(file: UploadFile = File(...), patient_key: str = Form(...), phrase_id: str = Form(...)):
+    if config.DISABLE_VSR:
+        return _err("Lip-reading is not available on this deployment.")
+    store = _template_store()
+    if not store:
+        return _err(NO_STORE)
+    if phrase_id not in phrases.phrase_ids():
+        return _err(f"Unknown phrase: {phrase_id}")
+    path = _save_upload(file)
+    try:
+        feats = phrases.downsample(vsr.extract_features(_decode_clip(path)))
+        blob, n, d = phrases.pack(feats)
+        takes = store.add_phrase_template(patient_key, phrase_id, blob, n, d, phrases.MAX_TAKES)
+        return {"status": "ok", "error": None, "phrase_id": phrase_id, "takes": takes, "frames": n}
+    except vsr.NoFaceError:
+        return _err("No face detected in the clip. Please try again.")
+    except vsr.NoSpeechError:
+        return _err("Didn't catch any speech in the clip. Please try again.")
+    except Exception as e:  # noqa: BLE001
+        log.exception("enroll_phrase failed")
+        return _err(f"enrollment failed: {e}")
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+@app.get("/api/phrase_templates")
+def phrase_templates(patient_key: str):
+    seed_phrases = sorted(phrases.load_seed().keys())
+    store = _template_store()
+    if not store:
+        return {"status": "ok", "error": None, "takes": {}, "seed_phrases": seed_phrases, "storage": False}
+    try:
+        takes = store.count_phrase_takes(patient_key)
+    except Exception as e:  # noqa: BLE001
+        log.exception("phrase_templates failed")
+        return _err(f"template storage unavailable: {e}")
+    return {"status": "ok", "error": None, "takes": takes, "seed_phrases": seed_phrases, "storage": True}
+
+
+@app.delete("/api/phrase_templates")
+def phrase_templates_delete(patient_key: str, phrase_id: str | None = None):
+    store = _template_store()
+    if not store:
+        return _err(NO_STORE)
+    try:
+        return {"status": "ok", "error": None, "deleted": store.delete_phrase_templates(patient_key, phrase_id)}
+    except Exception as e:  # noqa: BLE001
+        log.exception("phrase_templates delete failed")
+        return _err(f"template storage unavailable: {e}")

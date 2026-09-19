@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS user_settings (
     voice_id TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS language TEXT;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS gender TEXT;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS patient_key TEXT;
 CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value JSONB NOT NULL,
@@ -50,7 +53,19 @@ CREATE TABLE IF NOT EXISTS runs (
     latency_ms INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS phrase_templates (
+    id BIGSERIAL PRIMARY KEY,
+    patient_key TEXT NOT NULL,
+    phrase_id TEXT NOT NULL,
+    frames INTEGER NOT NULL,
+    dim INTEGER NOT NULL,
+    features BYTEA NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS phrase_templates_patient ON phrase_templates (patient_key, phrase_id);
 """
+
+USER_SETTING_FIELDS = ("voice_id", "language", "gender", "patient_key")
 
 APP_SETTINGS_DEFAULTS = {"default_voice_id": "Brian", "lip_reading_enabled": True}
 
@@ -115,19 +130,28 @@ def ping() -> bool:
 
 def get_user_settings(user_id: str) -> dict:
     row = _run(lambda c: c.execute(
-        "SELECT voice_id FROM user_settings WHERE user_id = %s", (user_id,),
+        "SELECT voice_id, language, gender, patient_key FROM user_settings WHERE user_id = %s",
+        (user_id,),
     ).fetchone())
-    return {"voice_id": row["voice_id"] if row else None}
+    return {k: (row[k] if row else None) for k in USER_SETTING_FIELDS}
 
 
-def put_user_settings(user_id: str, voice_id: str) -> dict:
+def put_user_settings(user_id: str, patch: dict) -> dict:
+    """Upsert the given fields; fields not in ``patch`` keep their stored value."""
+    values = {k: patch.get(k) for k in USER_SETTING_FIELDS}
     row = _run(lambda c: c.execute(
-        "INSERT INTO user_settings (user_id, voice_id) VALUES (%s, %s) "
-        "ON CONFLICT (user_id) DO UPDATE SET voice_id = EXCLUDED.voice_id, updated_at = now() "
-        "RETURNING voice_id",
-        (user_id, voice_id),
+        "INSERT INTO user_settings (user_id, voice_id, language, gender, patient_key) "
+        "VALUES (%(user_id)s, %(voice_id)s, %(language)s, %(gender)s, %(patient_key)s) "
+        "ON CONFLICT (user_id) DO UPDATE SET "
+        "voice_id = COALESCE(EXCLUDED.voice_id, user_settings.voice_id), "
+        "language = COALESCE(EXCLUDED.language, user_settings.language), "
+        "gender = COALESCE(EXCLUDED.gender, user_settings.gender), "
+        "patient_key = COALESCE(EXCLUDED.patient_key, user_settings.patient_key), "
+        "updated_at = now() "
+        "RETURNING voice_id, language, gender, patient_key",
+        {"user_id": user_id, **values},
     ).fetchone())
-    return {"voice_id": row["voice_id"]}
+    return {k: row[k] for k in USER_SETTING_FIELDS}
 
 
 def list_user_settings() -> dict[str, str | None]:
@@ -225,3 +249,55 @@ def count_runs_24h() -> int:
     return _run(lambda c: c.execute(
         "SELECT count(*) AS n FROM runs WHERE created_at > now() - interval '24 hours'"
     ).fetchone())["n"]
+
+
+# --- phrase templates (Hebrew phrase mode; features only, never video) --------
+
+def add_phrase_template(patient_key: str, phrase_id: str, features: bytes, frames: int, dim: int,
+                        max_takes: int) -> int:
+    """Store one take and return the number of takes kept for this phrase."""
+    def op(c: psycopg.Connection):
+        c.execute(
+            "INSERT INTO phrase_templates (patient_key, phrase_id, frames, dim, features) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (patient_key, phrase_id, frames, dim, features),
+        )
+        c.execute(
+            "DELETE FROM phrase_templates WHERE patient_key = %s AND phrase_id = %s AND id NOT IN ("
+            "SELECT id FROM phrase_templates WHERE patient_key = %s AND phrase_id = %s "
+            "ORDER BY id DESC LIMIT %s)",
+            (patient_key, phrase_id, patient_key, phrase_id, max_takes),
+        )
+        return c.execute(
+            "SELECT count(*) AS n FROM phrase_templates WHERE patient_key = %s AND phrase_id = %s",
+            (patient_key, phrase_id),
+        ).fetchone()["n"]
+
+    return _run(op)
+
+
+def list_phrase_templates(patient_key: str) -> list[dict]:
+    return _run(lambda c: c.execute(
+        "SELECT phrase_id, frames, dim, features FROM phrase_templates "
+        "WHERE patient_key = %s ORDER BY id",
+        (patient_key,),
+    ).fetchall())
+
+
+def count_phrase_takes(patient_key: str) -> dict[str, int]:
+    rows = _run(lambda c: c.execute(
+        "SELECT phrase_id, count(*) AS n FROM phrase_templates WHERE patient_key = %s GROUP BY phrase_id",
+        (patient_key,),
+    ).fetchall())
+    return {r["phrase_id"]: r["n"] for r in rows}
+
+
+def delete_phrase_templates(patient_key: str, phrase_id: str | None = None) -> int:
+    if phrase_id is None:
+        cur = _run(lambda c: c.execute(
+            "DELETE FROM phrase_templates WHERE patient_key = %s", (patient_key,)))
+    else:
+        cur = _run(lambda c: c.execute(
+            "DELETE FROM phrase_templates WHERE patient_key = %s AND phrase_id = %s",
+            (patient_key, phrase_id)))
+    return cur.rowcount

@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import admin, config, db, meta, tts
+from . import admin, config, db, meta, phrases, tts
 from .auth import optional_user, require_user
 
 logging.basicConfig(level=logging.INFO)
@@ -67,7 +67,10 @@ def settings_public():
 
 
 class SettingsBody(BaseModel):
-    voice_id: str
+    voice_id: str | None = None
+    language: str | None = None
+    gender: str | None = None
+    patient_key: str | None = None
 
 
 @app.get("/api/me/settings")
@@ -77,7 +80,22 @@ def me_settings(user: dict = Depends(require_user)):
 
 @app.put("/api/me/settings")
 def me_settings_put(body: SettingsBody, user: dict = Depends(require_user)):
-    return _db(db.put_user_settings, user["id"], body.voice_id)
+    if body.language is not None and body.language not in ("en", "he"):
+        raise HTTPException(status_code=400, detail="language must be 'en' or 'he'")
+    if body.gender is not None and body.gender not in ("m", "f"):
+        raise HTTPException(status_code=400, detail="gender must be 'm' or 'f'")
+    patch = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not patch:
+        raise HTTPException(status_code=400, detail="nothing to update")
+    return _db(db.put_user_settings, user["id"], patch)
+
+
+@app.get("/api/phrases/{lang}")
+def phrases_list(lang: str):
+    try:
+        return phrases.load_phrases(lang)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"no phrase list for language {lang!r}")
 
 
 class SupportBody(BaseModel):
@@ -128,8 +146,8 @@ def health():
 
 
 @app.get("/voices")
-def voices():
-    return {"voices": tts.list_voices()}
+def voices(lang: str = "en"):
+    return {"voices": tts.list_voices(lang)}
 
 
 @app.post("/speak")

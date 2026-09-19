@@ -68,6 +68,13 @@ class AVSR(torch.nn.Module):
 
         return texts[0]
 
+    def encode_features(self, data):
+        """Encoder output only (T, D): the per-frame visual features before the text decoder."""
+        with torch.no_grad():
+            if isinstance(data, tuple):
+                return self.model.encode(data[0].to(self.device), data[1].to(self.device))
+            return self.model.encode(data.to(self.device))
+
     def _hyp_text(self, hyp):
         text = add_results_to_json([hyp.asdict()], self.token_list)
         return text.replace("▁", " ").strip().replace("<eos>", "")
