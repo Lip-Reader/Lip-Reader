@@ -11,18 +11,14 @@ from pipelines.video_io import read_video_frames
 
 
 class AVSRDataLoader:
-    def __init__(self, modality, speed_rate=1, transform=True, detector="retinaface", convert_gray=True):
+    def __init__(self, modality, speed_rate=1, transform=True, detector="mediapipe", convert_gray=True):
         self.modality = modality
         self.transform = transform
         if self.modality in ["audio", "audiovisual"]:
             self.audio_transform = AudioTransform()
         if self.modality in ["video", "audiovisual"]:
-            if detector == "mediapipe":
-                from pipelines.detectors.mediapipe.video_process import VideoProcess
-                self.video_process = VideoProcess(convert_gray=convert_gray)
-            if detector == "retinaface":
-                from pipelines.detectors.retinaface.video_process import VideoProcess
-                self.video_process = VideoProcess(convert_gray=convert_gray)
+            from pipelines.detectors.mediapipe.video_process import VideoProcess
+            self.video_process = VideoProcess(convert_gray=convert_gray)
             self.video_transform = VideoTransform(speed_rate=speed_rate)
 
 

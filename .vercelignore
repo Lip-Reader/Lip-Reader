@@ -24,16 +24,12 @@ backend/pipelines
 backend/app/vsr_main.py
 backend/app/vsr.py
 backend/storage
-backend/e2e_check.py
+backend/tests
 modal_app.py
 benchmarks
 
 # Not needed by the deployment.
-tests
-spec
 assets/sravi_test_videos
 assets/test_videos
-assets/chaplin_ai.pptx
-project_requierments.pdf
 *.mp4
 *.mov

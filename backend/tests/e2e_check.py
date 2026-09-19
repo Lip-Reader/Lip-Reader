@@ -1,6 +1,6 @@
 """End-to-end check for both FastAPI apps (in-process TestClient), PASS/FAIL per stage.
 
-Run:  uv run python backend/e2e_check.py
+Run:  uv run python backend/tests/e2e_check.py
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from backend.app import config  # noqa: E402
 
 CAPTURE_SECONDS = 4
