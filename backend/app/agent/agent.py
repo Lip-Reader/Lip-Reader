@@ -44,7 +44,11 @@ def run_agent(raw_text: str, conversation: list[dict] | None = None) -> dict:
         user = f"Conversation so far (the speaker is 'You'):\n{transcript}\n\n{user}"
 
     result = agent.invoke({"messages": [HumanMessage(user)]})
-    text = result["messages"][-1].content.strip()
+    content = result["messages"][-1].content
+    if isinstance(content, list):  # thinking blocks can precede the text block
+        content = "".join(b.get("text", "") for b in content
+                          if isinstance(b, dict) and b.get("type") == "text")
+    text = content.strip()
     if text and text[-1] not in ".?!":
         text += "."
 
