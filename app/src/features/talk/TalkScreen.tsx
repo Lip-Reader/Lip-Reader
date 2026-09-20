@@ -93,7 +93,8 @@ function Talk() {
     if (!recorder.pickClip) return;
     const clip = await recorder.pickClip();
     if (!clip) return;
-    if (clip instanceof File && !clip.type.startsWith("video/")) {
+    // phone captures often report an empty type; only reject one we can see is wrong
+    if (clip instanceof File && clip.type && !clip.type.startsWith("video/")) {
       return setToast(t(language, "notAVideoToast"));
     }
     speaker.reset();

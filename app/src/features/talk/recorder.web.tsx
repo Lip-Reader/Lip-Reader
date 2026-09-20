@@ -22,6 +22,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     storage.get(CAMERA_KEY).then((v) => {
@@ -92,13 +93,38 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // One input, kept in the DOM: iOS Safari does not reliably fire "change" on a
+  // detached input, and the page can be suspended while the camera is open.
+  useEffect(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "video/*";
+    input.style.cssText = "position:fixed;left:-9999px;width:1px;height:1px";
+    document.body.appendChild(input);
+    fileInputRef.current = input;
+    return () => {
+      input.remove();
+      fileInputRef.current = null;
+    };
+  }, []);
+
   const pickClip = useCallback((): Promise<ClipFile | null> => {
+    const input = fileInputRef.current;
+    if (!input) return Promise.resolve(null);
     return new Promise((resolve) => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "video/*";
-      input.onchange = () => resolve(input.files?.[0] ?? null);
-      input.oncancel = () => resolve(null);
+      let settled = false;
+      const finish = (file: File | null) => {
+        if (settled) return;
+        settled = true;
+        input.onchange = null;
+        input.oncancel = null;
+        resolve(file);
+      };
+      input.value = ""; // so picking the same file twice still fires change
+      input.onchange = () => finish(input.files?.[0] ?? null);
+      // some mobile browsers fire cancel on the way back from the camera; let a
+      // change event that is still in flight win.
+      input.oncancel = () => setTimeout(() => finish(null), 400);
       input.click();
     });
   }, []);
