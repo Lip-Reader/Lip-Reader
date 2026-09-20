@@ -93,6 +93,9 @@ def _zoom_to_face(src: str):
     import numpy as np
     from pipelines.video_io import read_video_frames
 
+    # Deliberately no fps resampling: dropping 30 -> 25 fps measured worse on every
+    # take (take 4 close 92% -> 76%, take 3 far 85% -> 82%). The extra frames help
+    # more than matching the training rate does.
     frames = read_video_frames(src)
     if len(frames) == 0 or min(frames.shape[1:3]) < ZOOM_MIN_HEIGHT:
         return None
