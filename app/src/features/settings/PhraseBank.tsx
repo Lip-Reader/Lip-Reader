@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { enrollPhrase, getPhrases, getPhraseTemplates, Phrase, PhraseBank as Bank } from "../../lib/api";
+import { enrollPhrase, getPhrases, getPhraseTemplates, Phrase, PhraseBank as Bank, resetPhraseTemplates } from "../../lib/api";
 import { GlassButton, IconButton } from "../../ui";
 import { colors, fontFamily, radius } from "../../ui/theme";
 import { CameraPreview, RecorderProvider, useRecorder } from "../talk/recorder";
@@ -19,6 +19,9 @@ export default function PhraseBank() {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState<Phrase | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   useEffect(() => {
     getPhrases("he")
@@ -49,6 +52,20 @@ export default function PhraseBank() {
   }, [bank, q, group]);
   const taught = Object.values(takes).filter((n) => n > 0).length;
 
+  async function resetAll() {
+    if (!patientKey) return;
+    setResetting(true);
+    setResetError(null);
+    try {
+      await resetPhraseTemplates(patientKey);
+      setTakes({});
+      setConfirmReset(false);
+    } catch (e) {
+      setResetError(e instanceof Error && e.message ? e.message : "לא ניתן היה לאפס את המשפטים. נסו שוב.");
+    }
+    setResetting(false);
+  }
+
   if (error) return <Text style={styles.error}>{error}</Text>;
   if (!bank) return <ActivityIndicator color={colors.accent} style={{ marginVertical: 20 }} />;
 
@@ -77,9 +94,28 @@ export default function PhraseBank() {
           { value: "f", label: "נקבה", testID: "gender-f" },
         ]}
       />
-      <Text style={styles.muted} testID="phrase-progress">
-        {taught} מתוך {bank.phrases.length} משפטים נלמדו{storageOn ? "" : " · השמירה כבויה בשרת הזה"}
-      </Text>
+      <View style={styles.progressRow}>
+        <Text style={styles.muted} testID="phrase-progress">
+          {taught} מתוך {bank.phrases.length} משפטים נלמדו{storageOn ? "" : " · השמירה כבויה בשרת הזה"}
+        </Text>
+        {taught > 0 && patientKey && !confirmReset && (
+          <Pressable onPress={() => setConfirmReset(true)} accessibilityRole="button" testID="phrase-reset">
+            <Text style={styles.resetLink}>איפוס</Text>
+          </Pressable>
+        )}
+        {confirmReset && (
+          <View style={styles.resetConfirmRow}>
+            <Text style={styles.muted}>לאפס הכל?</Text>
+            <Pressable onPress={resetAll} disabled={resetting} accessibilityRole="button" testID="phrase-reset-confirm">
+              <Text style={styles.resetConfirmYes}>{resetting ? "מאפס..." : "כן, איפוס"}</Text>
+            </Pressable>
+            <Pressable onPress={() => setConfirmReset(false)} disabled={resetting} accessibilityRole="button" testID="phrase-reset-cancel">
+              <Text style={styles.muted}>ביטול</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+      {resetError && <Text style={styles.error}>{resetError}</Text>}
       <TextInput
         value={query}
         onChangeText={setQuery}
@@ -190,6 +226,10 @@ const styles = StyleSheet.create({
   rtl: { writingDirection: "rtl", textAlign: "right" },
   muted: { fontSize: 13, color: colors.muted, fontFamily },
   error: { color: colors.danger, fontSize: 14, fontFamily },
+  progressRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
+  resetLink: { fontSize: 13, fontWeight: "600", color: colors.danger, fontFamily },
+  resetConfirmRow: { flexDirection: "row-reverse", alignItems: "center", gap: 12 },
+  resetConfirmYes: { fontSize: 13, fontWeight: "700", color: colors.danger, fontFamily },
   input: {
     backgroundColor: colors.white,
     borderColor: "rgba(30,27,75,0.28)",

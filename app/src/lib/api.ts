@@ -125,6 +125,15 @@ export async function enrollPhrase(clip: ClipFile, patientKey: string, phraseId:
   return { takes: d.takes };
 }
 
+export async function resetPhraseTemplates(patientKey: string): Promise<void> {
+  const d = await request<{ status: string; error?: string; deleted: number }>(
+    VSR_BASE,
+    `/api/phrase_templates?patient_key=${encodeURIComponent(patientKey)}`,
+    { method: "DELETE" }
+  );
+  if (d.status !== "ok") throw new Error(d.error || "Couldn't reset your phrases.");
+}
+
 export async function speak(text: string, voiceId: string): Promise<{ audioUri: string; tokens: SpokenToken[] }> {
   const data = await request<{ audio: string; mime?: string; tokens?: SpokenToken[] }>(
     API_BASE,
