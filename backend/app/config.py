@@ -23,7 +23,7 @@ DISABLE_VSR = os.getenv("DISABLE_VSR", "1" if IS_VERCEL else "0").lower() in ("1
 
 # --- LLM ----------------------------------------------------------------
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-LLM_MODEL = "claude-haiku-4-5"
+LLM_MODEL = os.getenv("LLM_MODEL", "claude-sonnet-5")
 
 # --- Database (Supabase Postgres, session pooler URL) -------------------
 DATABASE_URL = os.getenv("DATABASE_URL")

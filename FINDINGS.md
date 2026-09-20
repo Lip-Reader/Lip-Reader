@@ -1,0 +1,107 @@
+# Measured findings — Sep 18–19 2026
+
+Everything here was measured in this repo, on real clips. Numbers are word-overlap
+F1 against ground truth unless stated.
+
+## Recording conditions dominate everything
+
+Same six SRAVI phrases, same person, same pipeline, two different Macs:
+
+| | old Mac | new Mac |
+|---|---|---|
+| Average F1 | **86%** | **24%** |
+| Frame | 1620×1080 | 1280×720 |
+| Face box | 107×123 px | 62×62 px |
+| Mouth patch | 47×40 px | 27×20 px |
+| Mouth-region contrast (sd) | 33.9 | 15.1 |
+| Mouth-region brightness | 67 | 67 |
+
+Two independent regressions, compounding: **a quarter of the pixels on the mouth**,
+and **half the local contrast** at identical brightness (light went flat / came from
+behind rather than in front). Framing and pose were *better* in the bad take — the
+model does not care about those.
+
+Targets to hit before trusting any recording session: **face box ≥ ~110 px**,
+**mouth-region contrast ≥ ~30**. Measure, don't eyeball. QuickTime's default
+"High" quality caps at 720p — set **Quality: Maximum** (or use the iPhone via
+Continuity Camera).
+
+## Sentence length has a sweet spot (~10–14 words)
+
+| Length | F1 (raw) |
+|---|---|
+| 2–3 words | poor — "I'm cold" → `I AM KNOWN` |
+| **10–14 words** | **89%** (one clip 100%) |
+| 20–30 words | 64% |
+
+Too short starves the language model of context; too long and the decode loses the
+thread. Earlier belief that "longer is always better" was wrong.
+
+## Openings are systematically weak
+
+Reproducible across takes and sentences — the first few words are dropped or mangled
+while the tail survives (matches issue #1). Two attempted fixes **both failed**:
+
+- Frozen first frame prepended (12/25/50 frames): no effect, ±2%.
+- Real speech prepended from another clip: **worse** — 80% → 56%, because the model
+  transcribes the filler and it bleeds into the sentence.
+
+A prompt hint telling the corrector that openings are unreliable **also did nothing**
+(identical output on 7/7 clips; an apparent win on a 3-clip sample was LLM
+run-to-run variance).
+
+## The corrector barely earns its place
+
+Model sweep, same 22 SRAVI clips, raw 92% in every case:
+
+| Corrector | After LLM | Pass (≥90%) |
+|---|---|---|
+| `claude-sonnet-5` | **92%** | 17/22 |
+| `claude-opus-4-8` | 92% | 17/22 |
+| `claude-sonnet-4-6` | 91% | 17/22 |
+| `claude-opus-5` | **89%** | **15/22** |
+| `claude-haiku-4-5` | — | rejects the `effort` param (400) |
+
+Best case is **neutral**. More capable models do *worse* — the task rewards
+restraint, and a model that reasons harder talks itself into more edits.
+Now set to `claude-sonnet-5` (`LLM_MODEL` env var overrides).
+
+History: Sonnet 4.6 (Jun) → Haiku 4.5 (Aug 6, "cut agent latency ~55%") → single-pass
+(PR #2). Three latency optimisations; nobody re-measured, because the eval was
+pinned to Sonnet 4.6 and had stopped testing production.
+
+## Spurious negation — the dangerous failure
+
+Three separate recordings where the model **inserted a negation that wasn't said**:
+"I am doing much better" → "I DON'T THINK I'M DOING MUCH BETTER". Fluent,
+confident, and semantically inverted. It **disappeared** when the same sentence was
+re-recorded in good conditions — so it is a symptom of starved signal, not a fixed
+model property.
+
+## Open bug: no length cap on decoding
+
+`assets/configs/LRS3_V_WER19.1.ini` has `maxlenratio=0.0` — no bound on output
+length. One clip produced `IT'S NOT IN MY WAY` ×13 (F1 10%). Setting `maxlenratio`
+to ~0.6 would cap output against clip length and kill this failure mode.
+
+## Hebrew / other languages
+
+- **Free-speech Hebrew via the English model: dead.** With the LM off, partial
+  phonetics only (*ani tsame* → `ANY TIP`, *ko'ev li* → `GRAVY`), nothing on short
+  phrases. An LLM cannot recover Hebrew from that.
+- **Spanish model tried as a phonetic front-end** (char-level, 5 vowels like Hebrew):
+  *worse*, not better. Its char decoder hallucinates fluent Spanish sentences.
+  CTC-only output is nearly pure vowels — which is exactly what the camera can see.
+- **Consistency:** a phrase repeated *within one clip* gives an identical reading
+  every time. **Across separate takes, variance is large.** Enrolment for phrase
+  mode therefore needs multiple takes across sessions, not five reps in one sitting.
+- No downloadable lip-reading model exists for Hebrew, Russian or Arabic. English,
+  Mandarin, Spanish, Portuguese, French only (Spanish 44.5% WER, French 58.6%).
+
+## Still unmeasured
+
+- **Silent mouthing vs speaking aloud.** The model was trained on voiced speech; the
+  product asks patients to mouth silently. Nobody has measured the gap. Block E of
+  `recording-script.md`.
+- Whether feeding the corrector the **n-best list** (logged since PR #8, not stored)
+  turns it from neutral into useful.
