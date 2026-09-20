@@ -50,6 +50,33 @@ in distance and recovers the full 90%.
 QuickTime's default "High" quality caps at 720p (Quality: Maximum lifts it), but per
 the above this matters far less than sitting close.
 
+## Face zoom: resolution matters again (Sep 20)
+
+Cropping the face out of the **full-resolution** frames, instead of squashing the
+whole frame to 640 first, recovers most of what distance costs — provided the
+source has the pixels to recover.
+
+| take | source | plain 640 path | face-zoom path |
+|---|---|---|---|
+| take 2 | 1280x720, far | 50% | **35%** |
+| take 3 | 1920x1080, far | 49% | **85%** |
+| take 4 | 1920x1080, close | 93% | 92% |
+
+A far 1080p recording goes from 49% to 85%, close to the 93% of a close-up. At
+720p there is not enough detail to recover and the crop makes things worse, so
+`_zoom_to_face` is gated on a source height of at least 1080 and never upscales a
+crop (upscaling cost take 3 12 points: 85% -> 73%).
+
+**This changes the resolution advice above, for uploaded clips only.** The "above
+640 wide gains nothing" result held because the 640 squash happened before the
+crop. With the crop first, distance and capture resolution trade off against each
+other until the mouth region reaches the model input size (88x88).
+
+The app still records at 640x360, so its own clips never reach the gate and are
+unaffected. Only uploaded video benefits today.
+
+Untested: a 4K far clip, which is where the trade-off should pay most.
+
 ## Sentence length has a sweet spot (~10–14 words)
 
 | Length | F1 (raw) |

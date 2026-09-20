@@ -41,6 +41,15 @@ app.add_middleware(
 FRAME_SIZE = 640  # longest side after downscale; face detection cost scales with pixels
 MODEL_FPS = 25    # what the VSR model was trained on
 
+# Face zoom: crop the face out of the full-resolution frames instead of squashing the
+# whole frame to FRAME_SIZE first, so a distant face keeps its real mouth detail.
+# Measured on the SRAVI far takes: 1080p far went 49% -> 85% word-overlap F1, while
+# 720p far got worse (50% -> 35%) because there is not enough detail to recover and
+# 1080p close was unchanged. Hence the source-height gate.
+ZOOM_MIN_HEIGHT = 1080  # below this, squashing the whole frame wins
+ZOOM_MAX_SIDE = 1920    # cap on the frames we hold in memory (4K clips)
+ZOOM_MARGIN = 2.6       # the 4 keypoints only span the inner face; include jaw and chin
+
 
 def _decode_clip(src: str) -> "np.ndarray":
     """Decode a browser clip straight into (T, H, W, 3) RGB frames at 25 fps, downscaled
@@ -75,6 +84,53 @@ def _decode_clip(src: str) -> "np.ndarray":
         size = (int(frames.shape[2] * k) // 2 * 2, int(frames.shape[1] * k) // 2 * 2)
         frames = np.stack([cv2.resize(f, size, interpolation=cv2.INTER_AREA) for f in frames])
     return frames
+
+
+def _zoom_to_face(src: str):
+    """Crop the face out of the full-resolution frames. Returns None to fall back to
+    _decode_clip when the source is too small to gain, or no face is found."""
+    import cv2
+    import numpy as np
+    from pipelines.video_io import read_video_frames
+
+    frames = read_video_frames(src)
+    if len(frames) == 0 or min(frames.shape[1:3]) < ZOOM_MIN_HEIGHT:
+        return None
+    if max(frames.shape[1:3]) > ZOOM_MAX_SIDE:
+        k = ZOOM_MAX_SIDE / max(frames.shape[1:3])
+        size = (int(frames.shape[2] * k), int(frames.shape[1] * k))
+        frames = np.stack([cv2.resize(f, size, interpolation=cv2.INTER_AREA) for f in frames])
+
+    # detect on a cheap copy, then map the box back to the full-resolution frames
+    k = FRAME_SIZE / max(frames.shape[1:3])
+    small_size = (int(frames.shape[2] * k), int(frames.shape[1] * k))
+    small = np.stack([cv2.resize(f, small_size, interpolation=cv2.INTER_AREA) for f in frames])
+
+    model = vsr.get_model()
+    model.init_landmarks_detector()
+    found = [l for l in model.landmarks_detector(small) if l is not None]
+    if not found:
+        return None
+    pts = np.concatenate(found, axis=0)
+
+    cx = (pts[:, 0].min() + pts[:, 0].max()) / 2 / k
+    cy = (pts[:, 1].min() + pts[:, 1].max()) / 2 / k
+    half = max(pts[:, 0].ptp(), pts[:, 1].ptp()) / 2 / k * ZOOM_MARGIN
+
+    h, w = frames.shape[1:3]
+    half = min(half, min(w, h) / 2)
+    cx = min(max(cx, half), w - half)
+    cy = min(max(cy, half), h - half)
+    top, bottom = int(cy - half), int(cy + half)
+    left, right = int(cx - half), int(cx + half)
+
+    crop = frames[:, top:bottom, left:right]
+    side = bottom - top
+    log.info("face zoom: %dx%d source -> %dpx face crop", w, h, side)
+    if side <= FRAME_SIZE:  # never upscale; it invents no detail
+        return crop
+    return np.stack([cv2.resize(f, (FRAME_SIZE, FRAME_SIZE), interpolation=cv2.INTER_AREA)
+                     for f in crop])
 
 
 def _ok(response: str, steps: list[dict]) -> dict:
@@ -178,7 +234,13 @@ def execute_lips(
         return _err("Lip-reading is not available on this deployment (the VSR model is too large for serverless).")
     path = _save_upload(file)
     try:
-        frames = _decode_clip(path)
+        frames = None
+        try:
+            frames = _zoom_to_face(path)
+        except Exception as e:  # any decode/detect problem falls back to the plain path
+            log.warning("face zoom failed, using the plain decode: %s", e)
+        if frames is None:
+            frames = _decode_clip(path)
         if language == "he":
             try:
                 return _recognise_phrase(frames, patient_key, gender)
