@@ -7,6 +7,16 @@ const STRINGS = {
   adminLabel: { en: "Admin", he: "ניהול" },
   resetLabel: { en: "Reset", he: "איפוס" },
   talkLabel: { en: "Talk", he: "דבר" },
+  uploadLabel: { en: "Upload a video", he: "העלאת סרטון" },
+  notAVideoToast: { en: "That file is not a video.", he: "הקובץ הזה אינו סרטון." },
+  cameraDeniedLabel: {
+    en: "Camera access is blocked. You can still upload a video.",
+    he: "הגישה למצלמה חסומה. עדיין אפשר להעלות סרטון.",
+  },
+  cameraFailedLabel: {
+    en: "The camera didn't start. You can still upload a video.",
+    he: "המצלמה לא הופעלה. עדיין אפשר להעלות סרטון.",
+  },
   stopLabel: { en: "Stop", he: "עצור" },
   speakLabel: { en: "Speak", he: "השמע" },
   preparingLabel: { en: "Preparing…", he: "מכין…" },

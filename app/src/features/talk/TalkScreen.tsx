@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Candidate, executeLips, getPublicSettings, logRun, pingVsr, vsrAvailable } from "../../lib/api";
+import { Candidate, ClipFile, executeLips, getPublicSettings, logRun, pingVsr, vsrAvailable } from "../../lib/api";
 import { useSession } from "../../lib/auth";
 import { t } from "../../lib/i18n";
 import { Background, FixedControls, GlassButton, GlassPanel, IconButton, Toast } from "../../ui";
@@ -86,6 +86,24 @@ function Talk() {
     setPhase("thinking");
     const clip = await recorder.stop();
     if (!clip) return setPhase("idle");
+    await processClip(clip);
+  }
+
+  async function upload() {
+    if (!recorder.pickClip) return;
+    const clip = await recorder.pickClip();
+    if (!clip) return;
+    if (clip instanceof File && !clip.type.startsWith("video/")) {
+      return setToast(t(language, "notAVideoToast"));
+    }
+    speaker.reset();
+    setText("");
+    setCandidates([]);
+    setPhase("thinking");
+    await processClip(clip);
+  }
+
+  async function processClip(clip: ClipFile) {
     const t0 = Date.now();
     setStartedAt(t0);
     try {
@@ -189,12 +207,15 @@ function Talk() {
         </View>
       )}
 
-      {recorder.error && (
+      {/* only while idle: after an upload its full-screen background would cover the result */}
+      {recorder.error && phase === "idle" && (
         <View style={styles.center}>
           <Background style={absoluteFill} />
           <GlassPanel style={styles.errorPanel}>
             <Ionicons name="videocam-off-outline" size={34} color={colors.accent} style={{ alignSelf: "center" }} />
-            <Text style={styles.errorText}>{recorder.error}</Text>
+            <Text style={styles.errorText}>
+              {t(language, recorder.error === "denied" ? "cameraDeniedLabel" : "cameraFailedLabel")}
+            </Text>
             <GlassButton label={t(language, "retryLabel")} variant="primary" onPress={recorder.retry} />
           </GlassPanel>
         </View>
@@ -212,6 +233,16 @@ function Talk() {
 
         {phase === "idle" && !recorder.error && (
           <GlassButton label={t(language, "talkLabel")} onPress={talk} disabled={paused || !recorder.ready || !settingsReady} icon={<RecordDot />} testID="talk-button" />
+        )}
+        {/* also offered when the camera failed - uploading is the fallback for exactly that case */}
+        {phase === "idle" && recorder.pickClip && (
+          <GlassButton
+            label={t(language, "uploadLabel")}
+            onPress={upload}
+            disabled={paused || !settingsReady}
+            icon={<Ionicons name="cloud-upload-outline" size={18} color={colors.text} />}
+            testID="upload-button"
+          />
         )}
         {phase === "recording" && (
           <GlassButton label={t(language, "stopLabel")} variant="danger" onPress={stop} icon={<Ionicons name="stop" size={18} color={colors.white} />} testID="stop-button" />

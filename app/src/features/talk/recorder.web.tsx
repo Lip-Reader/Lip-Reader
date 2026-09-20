@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ClipFile } from "../../lib/api";
 import { storage } from "../../lib/storage";
-import { CAMERA_KEY, Facing, Recorder } from "./recorder.types";
+import { CAMERA_KEY, CameraError, Facing, Recorder } from "./recorder.types";
 
 const MIME_CANDIDATES = ["video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
 
@@ -14,7 +14,7 @@ const RecorderCtx = createContext<Ctx | null>(null);
 
 export function RecorderProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<CameraError | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [facing, setFacing] = useState<Facing>("front");
   const loadedRef = useRef(false);
@@ -51,11 +51,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
       })
       .catch((e: unknown) => {
         if (!alive) return;
-        setError(
-          e instanceof DOMException && e.name === "NotAllowedError"
-            ? "Camera access is required."
-            : "Could not start the camera."
-        );
+        setError(e instanceof DOMException && e.name === "NotAllowedError" ? "denied" : "failed");
       });
     return () => {
       alive = false;
@@ -96,12 +92,23 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const pickClip = useCallback((): Promise<ClipFile | null> => {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "video/*";
+      input.onchange = () => resolve(input.files?.[0] ?? null);
+      input.oncancel = () => resolve(null);
+      input.click();
+    });
+  }, []);
+
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
   const flip = useCallback(() => setFacing((f) => (f === "front" ? "back" : "front")), []);
 
   const value = useMemo(
-    () => ({ ready, error, facing, flip, start, stop, retry, attach }),
-    [ready, error, facing, flip, start, stop, retry, attach]
+    () => ({ ready, error, facing, flip, start, stop, retry, pickClip, attach }),
+    [ready, error, facing, flip, start, stop, retry, pickClip, attach]
   );
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>;
 }
