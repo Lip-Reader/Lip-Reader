@@ -12,7 +12,13 @@ from .prompts import SYSTEM_PROMPT
 MEMORY_WINDOW = 10
 MAX_MESSAGE_CHARS = 500
 
-llm = ChatAnthropic(model=config.LLM_MODEL, temperature=0, max_tokens=512, timeout=30)
+# no temperature: sampling params are rejected on Opus 5 and the other 4.7+ models.
+llm = ChatAnthropic(
+    model=config.LLM_MODEL,
+    max_tokens=512,
+    timeout=30,
+    output_config={"effort": "low"},
+)
 agent = create_agent(model=llm, system_prompt=SYSTEM_PROMPT)
 
 
