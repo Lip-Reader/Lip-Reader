@@ -12,7 +12,14 @@ breaks, or whether the LLM corrector earns its place.
 - **Mouth it silently, at normal speed.** No exaggerating, no slowing down.
 - **2 reps of everything** (Block F is the exception). Two catches instability
   without doubling your filming time.
-- Same setup throughout: close, frontal, even light, highest resolution.
+- **Sit close enough to fill the frame with your face.** This is the one setting that
+  matters — see FINDINGS.md. The same phrases at laptop distance score 46%, and at
+  arm's length or nearer, 90%. Resolution above 640 wide and lighting/contrast turned
+  out not to matter; distance does.
+- **Mount the camera, don't hold it.** Handheld jitter is 4–28% of a face-width per
+  frame versus under 2% mounted, and the model reads that as mouth movement.
+- Same distance and setup for every block except where a block says otherwise, so the
+  only variable is what you said.
 - **Keep a ground truth file.** Easiest: name each file with the sentence. Otherwise
   a `ground_truth.json` per folder, `{"filename.mov": "what you said"}` — same shape
   as `assets/sravi_test_videos/*/ground_truth.json`, so it plugs into the existing
