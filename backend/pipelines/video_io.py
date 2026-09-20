@@ -16,6 +16,9 @@ import numpy as np
 def read_video_frames(filename):
     """Read a video file into a (T, H, W, C) uint8 RGB numpy array."""
     cap = cv2.VideoCapture(filename)
+    # Phones record portrait as landscape pixels plus a rotation flag. Without this
+    # OpenCV hands back a sideways face and the model reads nothing.
+    cap.set(cv2.CAP_PROP_ORIENTATION_AUTO, 1)
     frames = []
     try:
         while True:
