@@ -3,28 +3,52 @@
 Everything here was measured in this repo, on real clips. Numbers are word-overlap
 F1 against ground truth unless stated.
 
-## Recording conditions dominate everything
+## Recording distance dominates everything
 
-Same six SRAVI phrases, same person, same pipeline, two different Macs:
+**The single controllable variable that matters is how much of the frame the face
+fills.** Not resolution, not lighting, not contrast. Four takes of the same five
+SRAVI phrases, same person, same pipeline:
 
-| | old Mac | new Mac |
-|---|---|---|
-| Average F1 | **86%** | **24%** |
-| Frame | 1620×1080 | 1280×720 |
-| Face box | 107×123 px | 62×62 px |
-| Mouth patch | 47×40 px | 27×20 px |
-| Mouth-region contrast (sd) | 33.9 | 15.1 |
-| Mouth-region brightness | 67 | 67 |
+| take | camera | distance | avg F1 |
+|---|---|---|---|
+| original (old Mac) | 1620×1080 | close | **90%** |
+| take 2 | 1280×720 | far | 29% |
+| take 3 | 1920×1080 | far | 46% |
+| **take 4** | 1920×1080 | **close** | **90%** |
 
-Two independent regressions, compounding: **a quarter of the pixels on the mouth**,
-and **half the local contrast** at identical brightness (light went flat / came from
-behind rather than in front). Framing and pose were *better* in the bad take — the
-model does not care about those.
+Take 3 has the highest resolution of all four and scores 46%; take 4 differs only
+in distance and recovers the full 90%.
 
-Targets to hit before trusting any recording session: **face box ≥ ~110 px**,
-**mouth-region contrast ≥ ~30**. Measure, don't eyeball. QuickTime's default
-"High" quality caps at 720p — set **Quality: Maximum** (or use the iPhone via
-Continuity Camera).
+### Things that turned out NOT to matter — each of these was tested
+
+- **Capture resolution above 640 wide.** The server downscales every clip to
+  640×640 letterboxed (`FRAME_SIZE` in `vsr_main.py`) before the model sees it.
+  Running take 4 through the real production path (`_decode_clip`) versus reading
+  the file natively gives **identical scores, 90% both ways**, even though the face
+  drops from 253px to 84px. So raising the app's capture resolution above 640×360
+  would cost bandwidth and gain nothing. *(An earlier version of this document
+  recommended raising it. That was wrong — it was measured on the native path,
+  which production never takes.)*
+- **Mouth-region contrast.** Take 4 has the *lowest* contrast of any take
+  (17.7–24.4 vs 32–40 in the originals) and scores the same 90%. A separate
+  lighting test at contrast ~12 also performed fine. The metric does not predict
+  accuracy; it rises with harsh shadows and blown highlights too.
+- **Framing and pose.** The worst take was better centred, level and straight to
+  camera than the best one.
+
+### What does matter
+
+- **Fill the frame with your face.** This is the whole finding. At laptop distance
+  you fail; at arm's length or closer you don't.
+- **Don't measure face pixels in the source file** — that was the wrong proxy and it
+  produced a bogus "≥110px" threshold. A distant 1080p face has few real details to
+  survive the downscale; a close 720p face has plenty.
+- **Mount the camera.** Handheld phone clips jitter 4–28% of a face-width between
+  consecutive frames, versus 0.75–2% mounted. Shake becomes apparent mouth motion the
+  model cannot distinguish from speech. Target under ~2%.
+
+QuickTime's default "High" quality caps at 720p (Quality: Maximum lifts it), but per
+the above this matters far less than sitting close.
 
 ## Sentence length has a sweet spot (~10–14 words)
 
