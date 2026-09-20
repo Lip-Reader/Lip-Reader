@@ -3,7 +3,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 import { StyleSheet } from "react-native";
 import type { ClipFile } from "../../lib/api";
 import { storage } from "../../lib/storage";
-import { CAMERA_KEY, Facing, Recorder } from "./recorder.types";
+import { CAMERA_KEY, CameraError, Facing, Recorder } from "./recorder.types";
 
 type Ctx = Recorder & { cameraRef: React.RefObject<CameraView | null>; onReady: () => void };
 const RecorderCtx = createContext<Ctx | null>(null);
@@ -36,7 +36,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   }, [facing]);
 
   const granted = !!cam?.granted;
-  const error = cam && !granted ? "Camera access is required." : null;
+  const error: CameraError | null = cam && !granted ? "denied" : null;
 
   const start = useCallback(async () => {
     if (!cameraRef.current || !ready) return false;
