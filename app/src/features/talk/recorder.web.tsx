@@ -159,8 +159,22 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     const video = cropVideoRef.current;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
+
+    // Talk can be pressed before the hidden video has reported its size; without
+    // this the crop is silently skipped and the whole frame goes up.
+    if (video && !video.videoWidth) {
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          video.removeEventListener("loadedmetadata", done);
+          resolve();
+        };
+        video.addEventListener("loadedmetadata", done);
+        setTimeout(done, 1000);
+      });
+    }
     const w = video?.videoWidth || 0;
     const h = video?.videoHeight || 0;
+    if (!w || !h) console.warn("camera size unknown, uploading the whole frame");
 
     if (video && canvas && ctx && Math.min(w, h) >= MIN_CROP) {
       const detector = await getDetector();
