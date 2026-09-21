@@ -77,6 +77,8 @@ const HIDDEN = "position:fixed;left:-9999px;width:1px;height:1px";
 export type Framing = {
   frameW: number; frameH: number; faceW: number; facePct: number;
   cropSide: number; eyePx: number; distCm: number;
+  /** why the crop did not run, when it did not */
+  skipped?: "frame-too-small" | "no-detector" | "no-face";
 };
 
 function pickMimeType(): string {
@@ -174,11 +176,17 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     }
     const w = video?.videoWidth || 0;
     const h = video?.videoHeight || 0;
-    if (!w || !h) console.warn("camera size unknown, uploading the whole frame");
+    const blank = { frameW: w, frameH: h, faceW: 0, facePct: 0, cropSide: 0, eyePx: 0, distCm: 0 };
+    if (Math.min(w, h) < MIN_CROP) {
+      console.warn(`camera gave ${w}x${h}, too small to crop - uploading the whole frame`);
+      framingRef.current = { ...blank, skipped: "frame-too-small" };
+    }
 
     if (video && canvas && ctx && Math.min(w, h) >= MIN_CROP) {
       const detector = await getDetector();
       const found = detector ? faceBox(detector, video, performance.now()) : null;
+      if (!detector) framingRef.current = { ...blank, skipped: "no-detector" };
+      else if (!found) framingRef.current = { ...blank, skipped: "no-face" };
 
       // window size is fixed for the whole clip so no frame is ever rescaled
       const side = Math.round(

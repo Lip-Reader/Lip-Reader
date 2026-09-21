@@ -31,7 +31,9 @@ app = FastAPI(title="Chaplin AI - VSR lip reader", version="2.0.0", lifespan=_li
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.CORS_ORIGINS,
-    allow_origin_regex=r"^https?://localhost(:\d+)?$",
+    # localhost, plus this project's Vercel domains so preview deployments work
+    # without redeploying the service for every new URL.
+    allow_origin_regex=r"^https?://localhost(:\d+)?$|^https://(chaplin-ai|lip-reader)[a-z0-9-]*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
