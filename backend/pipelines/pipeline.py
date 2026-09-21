@@ -71,5 +71,6 @@ class InferencePipeline(torch.nn.Module):
             assert os.path.isfile(data_filename), f"data_filename: {data_filename} does not exist."
         landmarks = self.process_landmarks(data_filename, landmarks_filename)
         data = self.dataloader.load_data(data_filename, landmarks)
-        transcript = self.model.infer(data)
+        transcript, nbest = self.model.infer(data)
+        self.last_nbest = nbest
         return transcript

@@ -15,7 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import config, phrases, vsr
 from .agent import run_agent
 
-logging.basicConfig(level=logging.INFO)
+# force=True: Modal configures logging before we import, which makes a plain
+# basicConfig a no-op and silently drops every INFO line the decoder emits.
+logging.basicConfig(level=logging.INFO, force=True)
 log = logging.getLogger("chaplin.vsr_api")
 
 
@@ -254,7 +256,7 @@ def execute_lips(
             except vsr.NoSpeechError:
                 return _err("Didn't catch any speech in the clip. Please try again.")
         try:
-            raw = vsr.transcribe_clip(frames)
+            raw, nbest = vsr.transcribe_clip_nbest(frames)
         except vsr.NoFaceError:
             return _err("No face detected in the clip. Please try again.")
         except vsr.NoSpeechError:
@@ -262,7 +264,7 @@ def execute_lips(
         vsr_step = {
             "module": "vsr",
             "prompt": {"input": "<video clip>"},
-            "response": {"raw_transcription": raw},
+            "response": {"raw_transcription": raw, "nbest": nbest},
         }
         result = run_agent(raw, _parse_conversation(conversation))
         return _ok(result["response"], [vsr_step, *result["steps"]])

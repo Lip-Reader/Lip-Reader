@@ -65,8 +65,10 @@ class AVSR(torch.nn.Module):
             log.info("beam n-best (%d):", len(texts))
             for i, (h, t) in enumerate(zip(nbest_hyps, texts), 1):
                 log.info("  %2d. %8.3f  %s", i, float(h.score), t)
+            nbest = [{"text": t, "score": round(float(h.score), 3)}
+                     for h, t in zip(nbest_hyps, texts)]
 
-        return texts[0]
+        return texts[0], nbest
 
     def encode_features(self, data):
         """Encoder output only (T, D): the per-frame visual features before the text decoder."""

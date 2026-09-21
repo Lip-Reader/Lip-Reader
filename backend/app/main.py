@@ -117,6 +117,8 @@ class RunBody(BaseModel):
     latency_ms: int | None = None
     # how the speaker was framed: frame size, face size, crop window, rough distance
     framing: dict | None = None
+    # the beam's ranked alternatives, so a bad run can be diagnosed later
+    nbest: list | None = None
 
 
 @app.post("/api/runs")
@@ -124,7 +126,8 @@ def runs(body: RunBody, user: dict | None = Depends(optional_user)):
     user_id = (user or {}).get("id")
     if body.framing:
         log.info("framing %s", body.framing)
-    return {"id": _db(db.add_run, user_id, body.raw, body.corrected, body.latency_ms, body.framing)}
+    return {"id": _db(db.add_run, user_id, body.raw, body.corrected, body.latency_ms,
+                      body.framing, body.nbest)}
 
 
 @app.get("/api/db_ping")

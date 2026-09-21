@@ -161,10 +161,16 @@ export const putMySettings = (token: Token, patch: Partial<UserSettings>) =>
 export const sendSupport = (token: Token, message: string) =>
   request<{ id: number }>(API_BASE, "/api/support", json({ message }), token);
 export const logRun = (
-  token: Token, raw: string, corrected: string, latencyMs: number, framing?: unknown,
+  token: Token, raw: string, corrected: string, latencyMs: number,
+  framing?: unknown, nbest?: unknown,
 ) =>
   request(API_BASE, "/api/runs",
-    json({ raw, corrected, latency_ms: latencyMs, framing: framing ?? null }), token).catch(() => {});
+    json({ raw, corrected, latency_ms: latencyMs, framing: framing ?? null, nbest: nbest ?? null }),
+    token).catch(() => {});
+
+/** The beam's ranked alternatives, carried on the vsr step of an execute result. */
+export const nbestOf = (r: ExecuteResult) =>
+  r.steps?.find((s) => s.module === "vsr")?.response?.nbest ?? null;
 
 export type AdminOverview = {
   users: number;

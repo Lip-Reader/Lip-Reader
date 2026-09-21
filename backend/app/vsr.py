@@ -57,6 +57,13 @@ def move_model_to_device(device=None):
     log.info("VSR model on %s.", device)
 
 
+def transcribe_clip_nbest(video) -> tuple[str, list[dict]]:
+    """Same as ``transcribe_clip``, but also returns the beam's ranked alternatives.
+    The decoder produces these on every call; without this they are logged and lost."""
+    text = transcribe_clip(video)
+    return text, list(getattr(get_model(), "last_nbest", []) or [])
+
+
 def transcribe_clip(video) -> str:
     """`video` is a path or a (T, H, W, 3) RGB uint8 array.
     Returns the raw all-caps transcription; raises NoFaceError/NoSpeechError."""

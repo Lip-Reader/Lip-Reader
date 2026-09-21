@@ -52,9 +52,11 @@ CREATE TABLE IF NOT EXISTS runs (
     corrected TEXT NOT NULL,
     latency_ms INTEGER,
     framing JSONB,
+    nbest JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS framing JSONB;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS nbest JSONB;
 CREATE TABLE IF NOT EXISTS phrase_templates (
     id BIGSERIAL PRIMARY KEY,
     patient_key TEXT NOT NULL,
@@ -233,17 +235,18 @@ def list_audit(limit: int = 100) -> list[dict]:
 # --- runs ------------------------------------------------------------------
 
 def add_run(user_id: str | None, raw: str, corrected: str, latency_ms: int | None,
-            framing: dict | None = None) -> int:
+            framing: dict | None = None, nbest: list | None = None) -> int:
     return _run(lambda c: c.execute(
-        "INSERT INTO runs (user_id, raw, corrected, latency_ms, framing) "
-        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-        (user_id, raw, corrected, latency_ms, Json(framing) if framing else None),
+        "INSERT INTO runs (user_id, raw, corrected, latency_ms, framing, nbest) "
+        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        (user_id, raw, corrected, latency_ms,
+         Json(framing) if framing else None, Json(nbest) if nbest else None),
     ).fetchone())["id"]
 
 
 def list_runs(limit: int = 100) -> list[dict]:
     return _run(lambda c: c.execute(
-        "SELECT id, user_id, raw, corrected, latency_ms, created_at "
+        "SELECT id, user_id, raw, corrected, latency_ms, framing, nbest, created_at "
         "FROM runs ORDER BY id DESC LIMIT %s",
         (limit,),
     ).fetchall())

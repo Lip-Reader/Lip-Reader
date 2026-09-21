@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Candidate, ClipFile, executeLips, getPublicSettings, logRun, pingVsr, vsrAvailable } from "../../lib/api";
+import { Candidate, ClipFile, executeLips, getPublicSettings, logRun, nbestOf, pingVsr, vsrAvailable } from "../../lib/api";
 import { useSession } from "../../lib/auth";
 import { t } from "../../lib/i18n";
 import { Background, FixedControls, GlassButton, GlassPanel, IconButton, Toast } from "../../ui";
@@ -117,7 +117,7 @@ function Talk() {
       }
       setText(result.response);
       setPhase("review");
-      logRun(await session.getToken(), result.raw, result.response, Date.now() - t0, recorder.framingRef?.current);
+      logRun(await session.getToken(), result.raw, result.response, Date.now() - t0, recorder.framingRef?.current, nbestOf(result));
     } catch (e) {
       const known = e instanceof Error && e.message && !e.message.startsWith("/api/");
       setToast(
