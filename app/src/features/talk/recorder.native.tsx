@@ -79,7 +79,7 @@ export function CameraPreview() {
       facing={ctx.facing}
       mode="video"
       mute
-      videoQuality="480p"
+      videoQuality="1080p"
       mirror={false}
       onCameraReady={ctx.onReady}
     />

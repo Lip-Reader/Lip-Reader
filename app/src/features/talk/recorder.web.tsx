@@ -41,7 +41,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     setReady(false);
     navigator.mediaDevices
       .getUserMedia({
-        video: { facingMode: facing === "front" ? "user" : "environment", width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 25 } },
+        video: { facingMode: facing === "front" ? "user" : "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 25 } },
         audio: false,
       })
       .then((stream) => {
