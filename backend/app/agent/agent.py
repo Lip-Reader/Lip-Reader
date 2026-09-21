@@ -2,12 +2,16 @@
 returns a corrected sentence. Built with LangChain's create_agent - no tools, so
 it's a single model call, no tool-calling loop.
 """
+import logging
+
 from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
 
 from .. import config
 from .prompts import SYSTEM_PROMPT
+
+log = logging.getLogger("chaplin.agent")
 
 MEMORY_WINDOW = 10
 MAX_MESSAGE_CHARS = 500
@@ -49,6 +53,13 @@ def run_agent(raw_text: str, conversation: list[dict] | None = None) -> dict:
         content = "".join(b.get("text", "") for b in content
                           if isinstance(b, dict) and b.get("type") == "text")
     text = content.strip()
+    # The model sometimes narrates before answering ("the transcription seems too
+    # garbled...") and the preamble would be shown to the patient and spoken aloud.
+    # The sentence is always the last non-empty line.
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) > 1:
+        log.warning("corrector preamble discarded: %s", " / ".join(lines[:-1])[:200])
+        text = lines[-1]
     if text and text[-1] not in ".?!":
         text += "."
 

@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ClipFile } from "../../lib/api";
 import { storage } from "../../lib/storage";
-import { CAMERA_KEY, CameraError, Facing, Recorder } from "./recorder.types";
+import { CAMERA_KEY, CameraError, Facing, Quality, Recorder } from "./recorder.types";
 
 const MIME_CANDIDATES = ["video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
 
@@ -20,12 +20,71 @@ const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
 const MODEL =
   "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
 
-type Box = { cx: number; cy: number; side: number; faceW: number; eyePx: number };
+type Box = {
+  cx: number; cy: number; side: number; faceW: number; eyePx: number;
+  fill: number; cutOff: boolean; turn: number; mouthX: number; mouthY: number;
+};
+
+// Distance is only judged where the evidence is clear; everything between is left uncoloured.
+const TOO_CLOSE = 0.95;    // face filling the frame: every such run came back as filler
+const GOOD = [0.3, 0.75];  // where the clips that read well were recorded
+const MIN_FACE_PX = 130;   // smaller than this and the model's 96px mouth patch is enlarged
+const PATCH = 96;          // the model reads the mouth as a 96px square, so measure it at that size
 
 /** Rough distance from the camera. Assumes an average 6.3cm between the pupils and
-    a typical ~74 degree lens, so it is an estimate, not a measurement. */
-function estimateCm(eyePx: number, frameW: number) {
-  return eyePx > 0 ? Math.round((6.3 / (1.5 * (eyePx / frameW))) ) : 0;
+    a typical ~74 degree lens across the long side of the frame (a browser cannot read
+    the real lens), so it is an estimate, not a measurement. */
+function estimateCm(eyePx: number, w: number, h: number) {
+  return eyePx > 0 ? Math.round(6.3 / (1.5 * (eyePx / Math.max(w, h)))) : 0;
+}
+
+function rangeOf(b: Box): Quality["range"] {
+  if (b.fill >= TOO_CLOSE) return "close";
+  if (b.faceW < MIN_FACE_PX) return "far";
+  return !b.cutOff && b.fill >= GOOD[0] && b.fill <= GOOD[1] ? "good" : null;
+}
+
+/** Light, contrast and sharpness of the mouth area, at the size the model sees it.
+    In the model's reference face the mouth patch is about 0.7 of the face width. */
+function mouthStats(ctx: CanvasRenderingContext2D, video: HTMLVideoElement, b: Box) {
+  const side = 0.7 * b.faceW;
+  ctx.clearRect(0, 0, PATCH, PATCH);
+  ctx.drawImage(video, b.mouthX - side / 2, b.mouthY - side / 2, side, side, 0, 0, PATCH, PATCH);
+  const px = ctx.getImageData(0, 0, PATCH, PATCH).data;
+  const luma = new Float32Array(PATCH * PATCH);
+  let sum = 0;
+  for (let i = 0; i < luma.length; i++) {
+    luma[i] = 0.299 * px[4 * i] + 0.587 * px[4 * i + 1] + 0.114 * px[4 * i + 2];
+    sum += luma[i];
+  }
+  const mean = sum / luma.length;
+  let spread = 0;
+  let edges = 0;
+  for (let i = 0; i < luma.length; i++) {
+    spread += (luma[i] - mean) ** 2;
+    if (i % PATCH && i >= PATCH) edges += Math.abs(luma[i] - luma[i - 1]) + Math.abs(luma[i] - luma[i - PATCH]);
+  }
+  return {
+    light: Math.round(mean / 2.55),
+    contrast: Math.round(Math.sqrt(spread / luma.length) / 1.275),
+    sharp: Math.round((10 * edges) / luma.length) / 10,
+  };
+}
+
+/** Clip averages, saved with the run so the numbers can be compared with how it read. */
+function averageOf(s: Quality[]) {
+  if (!s.length) return null;
+  const mean = (f: (q: Quality) => number) => Math.round((10 * s.reduce((a, q) => a + f(q), 0)) / s.length) / 10;
+  return {
+    samples: s.length,
+    fill: mean((q) => q.fill),
+    cutOffPct: mean((q) => (q.cutOff ? 100 : 0)),
+    light: mean((q) => q.light),
+    contrast: mean((q) => q.contrast),
+    sharp: mean((q) => q.sharp),
+    turn: mean((q) => q.turn),
+    move: mean((q) => q.move),
+  };
 }
 
 let detectorPromise: Promise<any> | null = null;
@@ -64,12 +123,20 @@ function faceBox(detector: any, video: HTMLVideoElement, now: number): Box | nul
   const xs = kp.slice(0, 4).map((k: any) => k.x * w);
   const ys = kp.slice(0, 4).map((k: any) => k.y * h);
   const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  const eyePx = Math.abs(xs[0] - xs[1]);
   return {
     cx: bb.originX + bb.width / 2,
     cy: bb.originY + bb.height / 2,
     side: span * MARGIN,
     faceW: bb.width,
-    eyePx: Math.abs(xs[0] - xs[1]),
+    eyePx,
+    fill: Math.max(bb.width / w, bb.height / h),
+    // a cut-off forehead is left out: the eyes, nose and mouth are what the model aligns to
+    cutOff: bb.originX <= 1 || bb.originX + bb.width >= w - 1 || bb.originY + bb.height >= h - 1,
+    // the nose tip sits ~3cm in front of eyes 6.3cm apart, so its sideways shift is ~half tan(turn)
+    turn: Math.round(Math.atan((2 * Math.abs(xs[2] - (xs[0] + xs[1]) / 2)) / eyePx) * 57.3) || 0,
+    mouthX: xs[3],
+    mouthY: ys[3],
   };
 }
 const HIDDEN = "position:fixed;left:-9999px;width:1px;height:1px";
@@ -79,6 +146,7 @@ export type Framing = {
   cropSide: number; eyePx: number; distCm: number;
   /** why the crop did not run, when it did not */
   skipped?: "frame-too-small" | "no-detector" | "no-face";
+  quality?: ReturnType<typeof averageOf>;
 };
 
 function pickMimeType(): string {
@@ -103,6 +171,9 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawRef = useRef<number | null>(null);
   const framingRef = useRef<Framing | null>(null);
+  const boxRef = useRef<Box | null>(null);
+  const qualityRef = useRef<Quality | null>(null);
+  const samplesRef = useRef<Quality[]>([]);
 
   useEffect(() => {
     storage.get(CAMERA_KEY).then((v) => {
@@ -146,6 +217,52 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     };
   }, [attempt, facing]);
 
+  // The picture is measured all the time the camera is on, so the speaker can settle
+  // before pressing Talk. The recording loop follows the same face box through boxRef.
+  useEffect(() => {
+    if (!ready) return;
+    const patch = document.createElement("canvas");
+    patch.width = patch.height = PATCH;
+    const ctx = patch.getContext("2d", { willReadFrequently: true });
+    let detector: any = null;
+    getDetector().then((d) => (detector = d));
+    let prev: { cx: number; cy: number; t: number } | null = null;
+    let move = 0;
+    const id = setInterval(() => {
+      const video = cropVideoRef.current;
+      if (!detector || !ctx || !video?.videoWidth) return;
+      const now = performance.now();
+      const box = faceBox(detector, video, now);
+      boxRef.current = box;
+      if (!box) {
+        qualityRef.current = null;
+        prev = null;
+        return;
+      }
+      if (prev) {
+        const perSecond = (100 * Math.hypot(box.cx - prev.cx, box.cy - prev.cy)) / box.faceW / ((now - prev.t) / 1000);
+        move += (perSecond - move) * 0.3;
+      }
+      prev = { cx: box.cx, cy: box.cy, t: now };
+      const q: Quality = {
+        distCm: estimateCm(box.eyePx, video.videoWidth, video.videoHeight),
+        range: rangeOf(box),
+        fill: Math.round(100 * box.fill),
+        cutOff: box.cutOff,
+        ...mouthStats(ctx, video, box),
+        turn: box.turn,
+        move: Math.round(move),
+      };
+      qualityRef.current = q;
+      if (recorderRef.current?.state === "recording") samplesRef.current.push(q);
+    }, DETECT_MS);
+    return () => {
+      clearInterval(id);
+      boxRef.current = null;
+      qualityRef.current = null;
+    };
+  }, [ready]);
+
   const attach = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;
     if (el && streamRef.current) el.srcObject = streamRef.current;
@@ -177,6 +294,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     const w = video?.videoWidth || 0;
     const h = video?.videoHeight || 0;
     const blank = { frameW: w, frameH: h, faceW: 0, facePct: 0, cropSide: 0, eyePx: 0, distCm: 0 };
+    samplesRef.current = [];
     if (Math.min(w, h) < MIN_CROP) {
       console.warn(`camera gave ${w}x${h}, too small to crop - uploading the whole frame`);
       framingRef.current = { ...blank, skipped: "frame-too-small" };
@@ -184,7 +302,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
 
     if (video && canvas && ctx && Math.min(w, h) >= MIN_CROP) {
       const detector = await getDetector();
-      const found = detector ? faceBox(detector, video, performance.now()) : null;
+      const found = boxRef.current ?? (detector ? faceBox(detector, video, performance.now()) : null);
       if (!detector) framingRef.current = { ...blank, skipped: "no-detector" };
       else if (!found) framingRef.current = { ...blank, skipped: "no-face" };
 
@@ -204,21 +322,19 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
           facePct: b ? Math.round((100 * b.faceW) / w) : 0,
           cropSide: side,
           eyePx: Math.round(b?.eyePx ?? 0),
-          distCm: b ? estimateCm(b.eyePx, w) : 0,
+          distCm: b ? estimateCm(b.eyePx, w, h) : 0,
         };
       };
       record(found);
-      let lastDetect = 0;
+      let last = found;
       const draw = () => {
-        const now = performance.now();
-        if (detector && now - lastDetect > DETECT_MS) {
-          lastDetect = now;
-          const box = faceBox(detector, video, now);
-          if (box) {
-            record(box);
-            cx += (clamp(box.cx, w) - cx) * SMOOTH;
-            cy += (clamp(box.cy, h) - cy) * SMOOTH;
-          }
+        // the measuring loop owns the detector; ease once per new box, not once per frame
+        const box = boxRef.current;
+        if (box && box !== last) {
+          last = box;
+          record(box);
+          cx += (clamp(box.cx, w) - cx) * SMOOTH;
+          cy += (clamp(box.cy, h) - cy) * SMOOTH;
         }
         ctx.drawImage(video, Math.round(cx - side / 2), Math.round(cy - side / 2),
                       side, side, 0, 0, side, side);
@@ -245,6 +361,8 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
       recorder.onstop = () => {
         if (drawRef.current !== null) cancelAnimationFrame(drawRef.current);
         drawRef.current = null;
+        const quality = averageOf(samplesRef.current);
+        if (framingRef.current && quality) framingRef.current = { ...framingRef.current, quality };
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "video/webm" });
         chunksRef.current = [];
         resolve(blob);
@@ -311,7 +429,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const flip = useCallback(() => setFacing((f) => (f === "front" ? "back" : "front")), []);
 
   const value = useMemo(
-    () => ({ ready, error, facing, flip, start, stop, retry, pickClip, attach, framingRef }),
+    () => ({ ready, error, facing, flip, start, stop, retry, pickClip, attach, framingRef, qualityRef }),
     [ready, error, facing, flip, start, stop, retry, pickClip, attach]
   );
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>;

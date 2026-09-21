@@ -10,6 +10,7 @@ import { Background, FixedControls, GlassButton, GlassPanel, IconButton, Toast }
 import { absoluteFill, colors, fontFamily } from "../../ui/theme";
 import { useSettings } from "../settings/settingsStore";
 import { CameraPreview, RecorderProvider, useRecorder } from "./recorder";
+import type { Quality } from "./recorder.types";
 import { useSpeaker } from "./speaker";
 
 type Phase = "idle" | "recording" | "thinking" | "choose" | "review";
@@ -174,6 +175,8 @@ function Talk() {
         </View>
       )}
 
+      {(phase === "idle" || phase === "recording") && <QualityPill top={insets.top + 104} />}
+
       {phase === "thinking" && (
         <View style={styles.center}>
           <View style={styles.spinnerBox}>
@@ -271,6 +274,38 @@ function Talk() {
 
 const RecordDot = () => <View style={styles.recordDot} />;
 
+/** Live picture quality. Only the distance is coloured, and red only where reading is
+    known to break; the other numbers have no measured limits yet. */
+function QualityPill({ top }: { top: number }) {
+  const { language } = useSettings();
+  const { qualityRef } = useRecorder();
+  const [q, setQ] = useState<Quality | null>(null);
+
+  useEffect(() => {
+    const id = setInterval(() => setQ(qualityRef?.current ?? null), 250);
+    return () => clearInterval(id);
+  }, [qualityRef]);
+
+  if (!q) return null;
+  const color = q.range === "good" ? colors.success : q.range ? colors.danger : colors.white;
+  const note =
+    q.range === "close" ? t(language, "tooCloseLabel")
+    : q.range === "far" ? t(language, "tooFarLabel")
+    : q.cutOff ? t(language, "cutOffLabel")
+    : "";
+  return (
+    <View style={[styles.pill, styles.quality, { top }]} testID="quality-pill">
+      <Text style={[styles.pillText, { color }, language === "he" && styles.rtl]} testID="quality-distance">
+        ~{q.distCm} {t(language, "cmUnit")}{note && ` · ${note}`}
+      </Text>
+      <Text style={[styles.qualityText, language === "he" && styles.rtl]}>
+        {t(language, "lightLabel")} {q.light} · {t(language, "contrastLabel")} {q.contrast} · {t(language, "sharpLabel")} {q.sharp}
+        {" · "}{t(language, "turnLabel")} {q.turn}° · {t(language, "moveLabel")} {q.move}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
   dim: { ...absoluteFill, backgroundColor: "rgba(0,0,0,0.45)" },
@@ -290,6 +325,8 @@ const styles = StyleSheet.create({
   },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger },
   pillText: { color: colors.white, fontSize: 14, fontWeight: "500", fontFamily },
+  quality: { flexDirection: "column", gap: 2, borderRadius: 18, maxWidth: "92%" },
+  qualityText: { color: colors.white, fontSize: 12, textAlign: "center", opacity: 0.85, fontFamily },
   sentenceBox: {
     position: "absolute",
     left: 24,
