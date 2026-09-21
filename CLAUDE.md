@@ -52,6 +52,11 @@ api/index.py        Vercel entry for backend/app/main.py.   modal_app.py: Modal 
   toasts) in English and Hebrew; screens call `t(language, key)` so choosing Hebrew in Settings
   relabels the whole app, not just the phrase content. The Talk screen's Reset button (shown once
   a result or candidates are on screen) clears them and returns to idle.
+- **Listening** (`app/src/features/talk/listener.ts`, Settings switch, on by default, kept on the
+  device): while a clip records, the browser's own speech recognition (Chrome, Safari) writes down
+  what it hears. The Talk screen shows it under the sentence as "Heard: ..." and it is saved with
+  the run (`runs.heard`). The app never receives the sound, and the heard text never reaches the
+  corrector. Not available in Firefox, the native app, or for uploaded clips.
 - **Auth:** Clerk. Guests can use everything; sign-in only syncs
   `{ voice_id, language, gender, patient_key }` via `GET|PUT /api/me/settings`. Admin = Clerk public metadata `{ "role": "admin" }`
   (`auth.require_admin`). No publishable key → guest-only build; no

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Candidate, ClipFile, executeLips, getPublicSettings, logRun, nbestOf, pingVsr, vsrAvailable } from "../../lib/api";
@@ -9,6 +9,7 @@ import { t } from "../../lib/i18n";
 import { Background, FixedControls, GlassButton, GlassPanel, IconButton, Toast } from "../../ui";
 import { absoluteFill, colors, fontFamily } from "../../ui/theme";
 import { useSettings } from "../settings/settingsStore";
+import { startListening } from "./listener";
 import { CameraPreview, RecorderProvider, useRecorder } from "./recorder";
 import type { Quality } from "./recorder.types";
 import { useSpeaker } from "./speaker";
@@ -27,13 +28,15 @@ function Talk() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const session = useSession();
-  const { voiceId, language, gender, patientKey, ready: settingsReady } = useSettings();
+  const { voiceId, language, gender, patientKey, listen, ready: settingsReady } = useSettings();
   const recorder = useRecorder();
   const speaker = useSpeaker();
   const [phase, setPhase] = useState<Phase>("idle");
   const [text, setText] = useState("");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [rawResult, setRawResult] = useState("");
+  const [heard, setHeard] = useState("");
+  const listenerRef = useRef<ReturnType<typeof startListening>>(null);
   const [startedAt, setStartedAt] = useState(0);
   const [seconds, setSeconds] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -72,7 +75,13 @@ function Talk() {
     speaker.reset();
     setText("");
     setCandidates([]);
-    if (!(await recorder.start())) return setToast(t(language, "cameraNotReady"));
+    setHeard("");
+    // before any await: Safari only lets listening start straight from the tap
+    listenerRef.current = listen ? startListening(language) : null;
+    if (!(await recorder.start().catch(() => false))) {
+      listenerRef.current?.stop(); // never leave the microphone on without a recording
+      return setToast(t(language, "cameraNotReady"));
+    }
     setPhase("recording");
   }
 
@@ -80,14 +89,16 @@ function Talk() {
     speaker.reset();
     setText("");
     setCandidates([]);
+    setHeard("");
     setPhase("idle");
   }
 
   async function stop() {
     setPhase("thinking");
+    const hearing = listenerRef.current?.stop();
     const clip = await recorder.stop();
     if (!clip) return setPhase("idle");
-    await processClip(clip);
+    await processClip(clip, hearing);
   }
 
   async function upload() {
@@ -101,15 +112,18 @@ function Talk() {
     speaker.reset();
     setText("");
     setCandidates([]);
+    setHeard("");
     setPhase("thinking");
     await processClip(clip);
   }
 
-  async function processClip(clip: ClipFile) {
+  async function processClip(clip: ClipFile, hearing?: Promise<string>) {
     const t0 = Date.now();
     setStartedAt(t0);
     try {
       const result = await executeLips(clip, { language, patientKey, gender });
+      const said = (await hearing) ?? "";
+      setHeard(said);
       setRawResult(result.raw);
       if (language === "he" && !result.confident && result.candidates?.length) {
         setCandidates(result.candidates);
@@ -118,7 +132,7 @@ function Talk() {
       }
       setText(result.response);
       setPhase("review");
-      logRun(await session.getToken(), result.raw, result.response, Date.now() - t0, recorder.framingRef?.current, nbestOf(result));
+      logRun(await session.getToken(), result.raw, result.response, Date.now() - t0, recorder.framingRef?.current, nbestOf(result), said);
     } catch (e) {
       const known = e instanceof Error && e.message && !e.message.startsWith("/api/");
       setToast(
@@ -135,7 +149,7 @@ function Talk() {
   async function choose(c: Candidate) {
     setText(c.text);
     setPhase("review");
-    logRun(await session.getToken(), rawResult, c.text, Date.now() - startedAt, recorder.framingRef?.current);
+    logRun(await session.getToken(), rawResult, c.text, Date.now() - startedAt, recorder.framingRef?.current, undefined, heard);
   }
 
   const showText = phase === "review";
@@ -208,6 +222,11 @@ function Talk() {
                 ))
               : text}
           </Text>
+          {!!heard && (
+            <Text style={[styles.heard, language === "he" && styles.rtl]} testID="heard">
+              {t(language, "heardLabel")}: {heard}
+            </Text>
+          )}
         </View>
       )}
 
@@ -351,6 +370,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   sentence: { color: colors.white, fontSize: 30, fontWeight: "600", textAlign: "center", lineHeight: 40, maxWidth: 520, fontFamily },
+  heard: { color: colors.white, fontSize: 16, textAlign: "center", opacity: 0.75, marginTop: 14, maxWidth: 520, fontFamily },
   rtl: { writingDirection: "rtl" },
   rightControls: { flexDirection: "row", gap: 10 },
   chooseBox: { width: "100%", maxWidth: 360, gap: 10 },

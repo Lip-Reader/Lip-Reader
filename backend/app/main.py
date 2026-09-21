@@ -119,6 +119,8 @@ class RunBody(BaseModel):
     framing: dict | None = None
     # the beam's ranked alternatives, so a bad run can be diagnosed later
     nbest: list | None = None
+    # what the browser's speech recognition heard, to compare with the lip reading
+    heard: str | None = None
 
 
 @app.post("/api/runs")
@@ -127,7 +129,7 @@ def runs(body: RunBody, user: dict | None = Depends(optional_user)):
     if body.framing:
         log.info("framing %s", body.framing)
     return {"id": _db(db.add_run, user_id, body.raw, body.corrected, body.latency_ms,
-                      body.framing, body.nbest)}
+                      body.framing, body.nbest, body.heard)}
 
 
 @app.get("/api/db_ping")

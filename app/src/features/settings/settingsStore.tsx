@@ -7,16 +7,19 @@ export const DEFAULT_VOICE_ID = "Brian";
 const KEY = "chaplin_settings";
 const FIELDS = ["voice_id", "language", "gender", "patient_key"] as const;
 
-type Local = Partial<UserSettings>;
+// listen stays on this device: the microphone permission is per device too
+type Local = Partial<UserSettings> & { listen?: boolean };
 type Settings = {
   voiceId: string;
   language: Language;
   gender: Gender;
   patientKey: string | null;
+  listen: boolean;
   ready: boolean;
   setVoiceId: (id: string) => Promise<void>;
   setLanguage: (language: Language) => Promise<void>;
   setGender: (gender: Gender) => Promise<void>;
+  setListen: (listen: boolean) => Promise<void>;
 };
 
 const Ctx = createContext<Settings>({
@@ -24,10 +27,12 @@ const Ctx = createContext<Settings>({
   language: "en",
   gender: "m",
   patientKey: null,
+  listen: true,
   ready: false,
   setVoiceId: async () => {},
   setLanguage: async () => {},
   setGender: async () => {},
+  setListen: async () => {},
 });
 
 async function readLocal(): Promise<Local> {
@@ -92,6 +97,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             language: server.language ?? local.language,
             gender: server.gender ?? local.gender,
             patient_key: server.patient_key ?? local.patient_key,
+            listen: local.listen,
           };
         } catch {}
       }
@@ -109,12 +115,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [session.loaded, session.signedIn]);
 
   const update = useCallback(
-    async (patch: Local) => {
+    async (patch: Local, sync = true) => {
       const next = { ...stateRef.current, ...patch };
       stateRef.current = next;
       setState(next);
       await storage.set(KEY, JSON.stringify(next));
-      if (session.signedIn) await putMySettings(await session.getToken(), patch).catch(() => {});
+      if (sync && session.signedIn) await putMySettings(await session.getToken(), patch).catch(() => {});
     },
     [session]
   );
@@ -122,6 +128,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setVoiceId = useCallback((id: string) => update({ voice_id: id }), [update]);
   const setLanguage = useCallback((language: Language) => update({ language }), [update]);
   const setGender = useCallback((gender: Gender) => update({ gender }), [update]);
+  const setListen = useCallback((listen: boolean) => update({ listen }, false), [update]);
 
   const value = useMemo<Settings>(
     () => ({
@@ -129,12 +136,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       language: state.language === "he" ? "he" : "en",
       gender: state.gender === "f" ? "f" : "m",
       patientKey: state.patient_key ?? null,
+      listen: state.listen !== false,
       ready,
       setVoiceId,
       setLanguage,
       setGender,
+      setListen,
     }),
-    [state, ready, setVoiceId, setLanguage, setGender]
+    [state, ready, setVoiceId, setLanguage, setGender, setListen]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

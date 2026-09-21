@@ -30,8 +30,8 @@ export default function Logs() {
           />
         ) : (
           <Table
-            columns={["Time", "User", "Raw", "Corrected", "Latency"]}
-            rows={(data?.runs || []).map((r) => [when(r.created_at), r.user_id || "guest", r.raw, r.corrected, r.latency_ms != null ? `${r.latency_ms} ms` : "–"])}
+            columns={["Time", "User", "Raw", "Corrected", "Heard", "Latency"]}
+            rows={(data?.runs || []).map((r) => [when(r.created_at), r.user_id || "guest", r.raw, r.corrected, r.heard || "–", r.latency_ms != null ? `${r.latency_ms} ms` : "–"])}
           />
         )}
       </Card>

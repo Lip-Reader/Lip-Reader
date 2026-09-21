@@ -34,6 +34,48 @@ test("guest talk flow: record, sentence, speak", async ({ page }) => {
   await expect(page.getByTestId("sentence")).toHaveText("I would like some water.");
 });
 
+test("listening: what the browser heard shows under the sentence and is logged; Settings turns it off", async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).webkitSpeechRecognition = class {
+      onresult?: (e: unknown) => void;
+      onend?: () => void;
+      start() {
+        (window as any).__listening = true;
+      }
+      stop() {
+        this.onresult?.({ results: [[{ transcript: "I would like some water" }]] });
+        this.onend?.();
+      }
+    };
+  });
+  const runs: unknown[] = [];
+  await page.route("**/api/runs", (r) => {
+    runs.push(r.request().postDataJSON());
+    r.fulfill({ json: { id: 1 } });
+  });
+  const record = async () => {
+    await page.goto("/talk");
+    const talk = page.getByTestId("talk-button");
+    await expect(talk).toBeEnabled();
+    await talk.click();
+    await page.waitForTimeout(600);
+    await page.getByTestId("stop-button").click();
+    await expect(page.getByTestId("sentence")).toHaveText("I would like some water.");
+  };
+
+  await record();
+  await expect(page.getByTestId("heard")).toHaveText("Heard: I would like some water");
+  await expect.poll(() => runs).toEqual([expect.objectContaining({ heard: "I would like some water" })]);
+
+  await page.goto("/settings");
+  await page.getByTestId("listen-off").click();
+  await record();
+  await expect(page.getByTestId("heard")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__listening)).toBeUndefined();
+  await expect.poll(() => runs).toHaveLength(2);
+  expect(runs[1]).toEqual(expect.objectContaining({ heard: null }));
+});
+
 test("guest voice choice persists locally without /api/me/settings", async ({ page }) => {
   const settingsCalls: string[] = [];
   page.on("request", (r) => r.url().includes("/api/me/settings") && settingsCalls.push(r.url()));

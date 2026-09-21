@@ -162,10 +162,10 @@ export const sendSupport = (token: Token, message: string) =>
   request<{ id: number }>(API_BASE, "/api/support", json({ message }), token);
 export const logRun = (
   token: Token, raw: string, corrected: string, latencyMs: number,
-  framing?: unknown, nbest?: unknown,
+  framing?: unknown, nbest?: unknown, heard?: string,
 ) =>
   request(API_BASE, "/api/runs",
-    json({ raw, corrected, latency_ms: latencyMs, framing: framing ?? null, nbest: nbest ?? null }),
+    json({ raw, corrected, latency_ms: latencyMs, framing: framing ?? null, nbest: nbest ?? null, heard: heard || null }),
     token).catch(() => {});
 
 /** The beam's ranked alternatives, carried on the vsr step of an execute result. */
@@ -205,6 +205,7 @@ export type RunEntry = {
   user_id: string | null;
   raw: string;
   corrected: string;
+  heard: string | null;
   latency_ms: number | null;
   created_at: string;
 };

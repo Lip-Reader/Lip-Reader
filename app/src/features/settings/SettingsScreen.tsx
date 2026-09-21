@@ -7,6 +7,7 @@ import { useSession } from "../../lib/auth";
 import { t } from "../../lib/i18n";
 import { Background, Body, GlassButton, GlassPanel, IconButton, Title } from "../../ui";
 import { colors, fontFamily, radius } from "../../ui/theme";
+import { canListen } from "../talk/listener";
 import PhraseBank from "./PhraseBank";
 import Segmented from "./Segmented";
 import { useSettings } from "./settingsStore";
@@ -16,7 +17,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const session = useSession();
-  const { language, setLanguage } = useSettings();
+  const { language, setLanguage, listen, setListen } = useSettings();
   const [message, setMessage] = useState("");
   const [sent, setSent] = useState<string | null>(null);
 
@@ -59,6 +60,19 @@ export default function SettingsScreen() {
         <Section title={t(language, "voiceSectionTitle")} hint={t(language, "voiceSectionHint")}>
           <VoicePicker />
         </Section>
+
+        {canListen() && (
+          <Section title={t(language, "listenSectionTitle")} hint={t(language, "listenSectionHint")}>
+            <Segmented
+              value={listen ? "on" : "off"}
+              onChange={(v) => setListen(v === "on")}
+              options={[
+                { value: "on", label: t(language, "onLabel"), testID: "listen-on" },
+                { value: "off", label: t(language, "offLabel"), testID: "listen-off" },
+              ]}
+            />
+          </Section>
+        )}
 
         <Section title={t(language, "accountSectionTitle")}>
           {session.signedIn ? (
