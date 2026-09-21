@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Candidate, ClipFile, executeLips, getPublicSettings, logRun, nbestOf, pingVsr, vsrAvailable } from "../../lib/api";
@@ -274,33 +274,46 @@ function Talk() {
 
 const RecordDot = () => <View style={styles.recordDot} />;
 
-/** Live picture quality. Only the distance is coloured, and red only where reading is
-    known to break; the other numbers have no measured limits yet. */
+const TONE = { good: colors.success, ok: colors.white, bad: colors.danger };
+
+/** Live picture quality: green is best, white is fine, red is bad. The recorder smooths
+    the numbers and holds each one until it really moves, so this gives a general sense. */
 function QualityPill({ top }: { top: number }) {
   const { language } = useSettings();
   const { qualityRef } = useRecorder();
   const [q, setQ] = useState<Quality | null>(null);
 
   useEffect(() => {
-    const id = setInterval(() => setQ(qualityRef?.current ?? null), 250);
+    const id = setInterval(() => setQ(qualityRef?.current ?? null), 1000);
     return () => clearInterval(id);
   }, [qualityRef]);
 
   if (!q) return null;
-  const color = q.range === "good" ? colors.success : q.range ? colors.danger : colors.white;
   const note =
-    q.range === "close" ? t(language, "tooCloseLabel")
-    : q.range === "far" ? t(language, "tooFarLabel")
+    q.grades.fill === "bad" ? t(language, q.fill > 50 ? "tooCloseLabel" : "tooFarLabel")
     : q.cutOff ? t(language, "cutOffLabel")
     : "";
+  const parts = [
+    ["light", "lightLabel", q.light],
+    ["contrast", "contrastLabel", q.contrast],
+    ["sharp", "sharpLabel", q.sharp],
+    ["turn", "turnLabel", `${q.turn}°`],
+    ["move", "moveLabel", q.move],
+  ] as const;
   return (
     <View style={[styles.pill, styles.quality, { top }]} testID="quality-pill">
-      <Text style={[styles.pillText, { color }, language === "he" && styles.rtl]} testID="quality-distance">
-        ~{q.distCm} {t(language, "cmUnit")}{note && ` · ${note}`}
+      <Text style={[styles.pillText, { color: TONE[q.grades.fill] }, language === "he" && styles.rtl]} testID="quality-distance">
+        {q.face ? `~${q.distCm} ${t(language, "cmUnit")}${note && ` · ${note}`}` : t(language, "noFaceLabel")}
       </Text>
       <Text style={[styles.qualityText, language === "he" && styles.rtl]}>
-        {t(language, "lightLabel")} {q.light} · {t(language, "contrastLabel")} {q.contrast} · {t(language, "sharpLabel")} {q.sharp}
-        {" · "}{t(language, "turnLabel")} {q.turn}° · {t(language, "moveLabel")} {q.move}
+        {parts.map(([key, label, value], i) => (
+          <Fragment key={key}>
+            {i > 0 && " · "}
+            <Text style={{ color: TONE[q.grades[key]] }} testID={`quality-${key}`}>
+              {t(language, label)} {q.face ? value : "–"}
+            </Text>
+          </Fragment>
+        ))}
       </Text>
     </View>
   );

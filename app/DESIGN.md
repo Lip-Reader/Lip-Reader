@@ -40,8 +40,8 @@ panels are frosted glass floating above it. Light theme only.
 - **GlassButton** — pill, 52px tall, variants `primary` (accent gradient, white text), `ghost` (glassStrong, dark text), `danger` (danger fill, white text). Pressed: scale 0.97.
 - **IconButton** — 44×44 glass circle, one icon, used for the fixed Settings (top-left) and Admin (top-right) controls.
 - **Toast** — small glass pill at the top, auto-hides in 4 s.
-- **Quality pill** — Talk screen, under the top controls, while idle or recording: estimated distance plus light, contrast, sharpness, head turn and movement. Only the distance is coloured: `success` in the range that reads well, `danger` only where reading is known to break (face filling the frame, or too small for the model), white otherwise. Red always comes with words ("too close"), never colour alone.
 - **Emoji as icons** — landing steps and settings section titles use one emoji each (🎥 ✨ 🔊 🎙️ 👤 💬) instead of icon fonts; keeps copy short and friendly.
+- **Quality pill** — Talk screen, under the top controls, while idle or recording: estimated distance plus light, contrast, sharpness, head turn and movement, smoothed and refreshed once a second; each number and its colour hold still until the value really moves, so the pill is calm while the speaker is. Each number is `success` (best), white (fine) or `danger` (bad); the limits live in one table in `recorder.web.tsx`. A red distance always comes with words ("too close", "too far", "no face found"), and the pill stays in place when the face is lost instead of disappearing.
 - **Selected chip** — a selected segment (e.g. Voices / Record my voice) uses the dark `text` color as fill with white text so it always contrasts with the light glass.
 - **Long lists** — capped at ~330px with internal scroll and a "Show more" step of 5, so the page itself never becomes one long scroll.
 

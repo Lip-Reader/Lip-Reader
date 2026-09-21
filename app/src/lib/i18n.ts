@@ -31,6 +31,7 @@ const STRINGS = {
   cmUnit: { en: "cm", he: "ס״מ" },
   tooCloseLabel: { en: "too close", he: "קרוב מדי" },
   tooFarLabel: { en: "too far", he: "רחוק מדי" },
+  noFaceLabel: { en: "no face found", he: "לא נמצאו פנים" },
   cutOffLabel: { en: "face cut off", he: "הפנים חתוכות" },
   lightLabel: { en: "light", he: "אור" },
   contrastLabel: { en: "contrast", he: "ניגודיות" },

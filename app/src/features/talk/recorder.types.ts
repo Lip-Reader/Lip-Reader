@@ -5,15 +5,17 @@ export type Facing = "front" | "back";
 /** Why the camera is unavailable; the screen turns this into a message. */
 export type CameraError = "denied" | "failed";
 
-/** Live picture-quality numbers for the on-screen readout. Only distance is judged:
-    the rest have no measured limits yet, so they are shown and stored, not coloured. */
+export type Grade = "good" | "ok" | "bad";
+
+/** Live picture-quality numbers for the on-screen readout, smoothed over about a second. */
 export type Quality = {
+  /** false while no face is found; the numbers are then all 0 */
+  face: boolean;
   distCm: number;
-  /** "close" / "far" only where reading is known to break; null when unsure */
-  range: "good" | "close" | "far" | null;
-  /** % of the frame the face fills, on whichever side is tighter */
+  /** % of the frame the face fills, on whichever side is tighter; distance is graded on this */
   fill: number;
   cutOff: boolean;
+  grades: Record<"fill" | "light" | "contrast" | "sharp" | "turn" | "move", Grade>;
   /** 0-100: mean brightness and spread of the mouth area */
   light: number;
   contrast: number;

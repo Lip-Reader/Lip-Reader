@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ClipFile } from "../../lib/api";
 import { storage } from "../../lib/storage";
-import { CAMERA_KEY, CameraError, Facing, Quality, Recorder } from "./recorder.types";
+import { CAMERA_KEY, CameraError, Facing, Grade, Quality, Recorder } from "./recorder.types";
 
 const MIME_CANDIDATES = ["video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
 
@@ -25,11 +25,30 @@ type Box = {
   fill: number; cutOff: boolean; turn: number; mouthX: number; mouthY: number;
 };
 
-// Distance is only judged where the evidence is clear; everything between is left uncoloured.
-const TOO_CLOSE = 0.95;    // face filling the frame: every such run came back as filler
-const GOOD = [0.3, 0.75];  // where the clips that read well were recorded
-const MIN_FACE_PX = 130;   // smaller than this and the model's 96px mouth patch is enlarged
-const PATCH = 96;          // the model reads the mouth as a 96px square, so measure it at that size
+// Where each number turns red or green: [red below, green from, green to, red above].
+// Only the fill (distance) limits come from measured runs: 83% read well, 92% and up
+// came back as filler, and the clips that read best sat at 30-75%. The rest are first
+// guesses, to be corrected from the quality numbers saved with every run.
+type Metric = keyof Quality["grades"];
+const LIMITS: Record<Metric, [number, number, number, number]> = {
+  fill: [20, 30, 75, 88],
+  light: [10, 25, 80, 92],
+  contrast: [10, 20, Infinity, Infinity],
+  sharp: [2, 4, Infinity, Infinity],
+  turn: [-Infinity, -Infinity, 15, 30],
+  move: [-Infinity, -Infinity, 15, 40],
+};
+const EASE = 0.15;  // per detection: steady enough to read, settles ~2s after the speaker moves
+// The readout holds each number, and its colour, until it has moved this far, so it sits
+// still while the speaker does. The averages saved with a run use the unheld numbers.
+type Numbers = Record<Metric | "distCm", number>;
+const STEP: Numbers = { distCm: 3, fill: 4, light: 5, contrast: 5, sharp: 1, turn: 5, move: 10 };
+const PATCH = 96;   // the model reads the mouth as a 96px square, so measure it at that size
+
+const NO_FACE: Quality = {
+  face: false, distCm: 0, fill: 0, cutOff: false, light: 0, contrast: 0, sharp: 0, turn: 0, move: 0,
+  grades: { fill: "bad", light: "ok", contrast: "ok", sharp: "ok", turn: "ok", move: "ok" },
+};
 
 /** Rough distance from the camera. Assumes an average 6.3cm between the pupils and
     a typical ~74 degree lens across the long side of the frame (a browser cannot read
@@ -38,10 +57,9 @@ function estimateCm(eyePx: number, w: number, h: number) {
   return eyePx > 0 ? Math.round(6.3 / (1.5 * (eyePx / Math.max(w, h)))) : 0;
 }
 
-function rangeOf(b: Box): Quality["range"] {
-  if (b.fill >= TOO_CLOSE) return "close";
-  if (b.faceW < MIN_FACE_PX) return "far";
-  return !b.cutOff && b.fill >= GOOD[0] && b.fill <= GOOD[1] ? "good" : null;
+function grade(v: number, [redBelow, greenFrom, greenTo, redAbove]: number[]): Grade {
+  if (v < redBelow || v > redAbove) return "bad";
+  return v >= greenFrom && v <= greenTo ? "good" : "ok";
 }
 
 /** Light, contrast and sharpness of the mouth area, at the size the model sees it.
@@ -72,9 +90,10 @@ function mouthStats(ctx: CanvasRenderingContext2D, video: HTMLVideoElement, b: B
 }
 
 /** Clip averages, saved with the run so the numbers can be compared with how it read. */
-function averageOf(s: Quality[]) {
+type Sample = Numbers & { cutOff: boolean };
+function averageOf(s: Sample[]) {
   if (!s.length) return null;
-  const mean = (f: (q: Quality) => number) => Math.round((10 * s.reduce((a, q) => a + f(q), 0)) / s.length) / 10;
+  const mean = (f: (q: Sample) => number) => Math.round((10 * s.reduce((a, q) => a + f(q), 0)) / s.length) / 10;
   return {
     samples: s.length,
     fill: mean((q) => q.fill),
@@ -173,7 +192,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const framingRef = useRef<Framing | null>(null);
   const boxRef = useRef<Box | null>(null);
   const qualityRef = useRef<Quality | null>(null);
-  const samplesRef = useRef<Quality[]>([]);
+  const samplesRef = useRef<Sample[]>([]);
 
   useEffect(() => {
     storage.get(CAMERA_KEY).then((v) => {
@@ -227,7 +246,9 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     let detector: any = null;
     getDetector().then((d) => (detector = d));
     let prev: { cx: number; cy: number; t: number } | null = null;
-    let move = 0;
+    let smooth: Numbers | null = null;
+    let shown: Numbers | null = null;
+    let missed = 0;
     const id = setInterval(() => {
       const video = cropVideoRef.current;
       if (!detector || !ctx || !video?.videoWidth) return;
@@ -235,26 +256,46 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
       const box = faceBox(detector, video, now);
       boxRef.current = box;
       if (!box) {
-        qualityRef.current = null;
         prev = null;
+        // the detector drops the odd frame; only call the face lost after half a second
+        if (++missed >= 4) {
+          smooth = shown = null;
+          qualityRef.current = NO_FACE;
+        }
         return;
       }
-      if (prev) {
-        const perSecond = (100 * Math.hypot(box.cx - prev.cx, box.cy - prev.cy)) / box.faceW / ((now - prev.t) / 1000);
-        move += (perSecond - move) * 0.3;
-      }
-      prev = { cx: box.cx, cy: box.cy, t: now };
-      const q: Quality = {
+      missed = 0;
+      const raw = {
         distCm: estimateCm(box.eyePx, video.videoWidth, video.videoHeight),
-        range: rangeOf(box),
-        fill: Math.round(100 * box.fill),
-        cutOff: box.cutOff,
+        fill: 100 * box.fill,
         ...mouthStats(ctx, video, box),
         turn: box.turn,
-        move: Math.round(move),
+        move: prev ? (100 * Math.hypot(box.cx - prev.cx, box.cy - prev.cy)) / box.faceW / ((now - prev.t) / 1000) : 0,
+      };
+      prev = { cx: box.cx, cy: box.cy, t: now };
+      if (smooth) for (const k of Object.keys(raw) as (keyof typeof raw)[]) smooth[k] += (raw[k] - smooth[k]) * EASE;
+      else smooth = raw;
+      if (recorderRef.current?.state === "recording") samplesRef.current.push({ ...smooth, cutOff: box.cutOff });
+      if (!shown) shown = { ...smooth };
+      else for (const k of Object.keys(STEP) as (keyof Numbers)[]) if (Math.abs(smooth[k] - shown[k]) >= STEP[k]) shown[k] = smooth[k];
+      const s = shown;
+      const grades = { ...NO_FACE.grades };
+      for (const k of Object.keys(LIMITS) as Metric[]) grades[k] = grade(s[k], LIMITS[k]);
+      // a face touching the frame edge is never "best", even at a good size
+      if (box.cutOff && grades.fill === "good") grades.fill = "ok";
+      const q: Quality = {
+        face: true,
+        cutOff: box.cutOff,
+        grades,
+        distCm: Math.round(s.distCm),
+        fill: Math.round(s.fill),
+        light: Math.round(s.light),
+        contrast: Math.round(s.contrast),
+        sharp: Math.round(10 * s.sharp) / 10,
+        turn: Math.round(s.turn),
+        move: Math.round(s.move),
       };
       qualityRef.current = q;
-      if (recorderRef.current?.state === "recording") samplesRef.current.push(q);
     }, DETECT_MS);
     return () => {
       clearInterval(id);
