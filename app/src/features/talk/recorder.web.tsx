@@ -10,6 +10,51 @@ const MIME_CANDIDATES = ["video/mp4", "video/webm;codecs=vp9,opus", "video/webm;
 // up to 640, and upscaling measured worse. Below it we send the frame uncropped.
 const CROP = 800;
 const MIN_CROP = 640;
+const MARGIN = 2.6;        // the detector box is tight; include jaw and chin
+const DETECT_MS = 120;     // re-detect ~8x a second, not every frame
+const SMOOTH = 0.25;       // ease the window towards the face so it does not jitter
+const VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
+const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
+const MODEL =
+  "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
+
+type Box = { cx: number; cy: number; side: number };
+
+let detectorPromise: Promise<any> | null = null;
+
+/** Loaded once, lazily: it is only needed when a recording starts. */
+function getDetector() {
+  if (!detectorPromise) {
+    // Loaded from the CDN at runtime: Metro cannot bundle this package's ESM/WASM
+    // layout, and a bare import() fails with a 500. new Function hides it from the
+    // bundler so the browser resolves the URL itself.
+    const load = new Function("u", "return import(u)") as (u: string) => Promise<any>;
+    detectorPromise = load(VISION)
+      .then(async ({ FilesetResolver, FaceDetector }) => {
+        const vision = await FilesetResolver.forVisionTasks(WASM);
+        return FaceDetector.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: MODEL },
+          runningMode: "VIDEO",
+        });
+      })
+      .catch((e) => {
+        console.warn("face detector unavailable, cropping to the centre instead", e);
+        return null;
+      });
+  }
+  return detectorPromise;
+}
+
+function faceBox(detector: any, video: HTMLVideoElement, now: number): Box | null {
+  const res = detector?.detectForVideo?.(video, now);
+  const bb = res?.detections?.[0]?.boundingBox;
+  if (!bb) return null;
+  return {
+    cx: bb.originX + bb.width / 2,
+    cy: bb.originY + bb.height / 2,
+    side: Math.max(bb.width, bb.height) * MARGIN,
+  };
+}
 const HIDDEN = "position:fixed;left:-9999px;width:1px;height:1px";
 
 function pickMimeType(): string {
@@ -85,19 +130,41 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     const stream = streamRef.current;
     if (!stream) return false;
 
-    // Draw a centred square of the camera frame into a canvas and record that, so
-    // only the face area leaves the device. Too small to crop -> send it whole.
+    // Only the face area is uploaded. A fixed-size window is cut out of the camera
+    // frame and pans to follow the face, so nothing is ever scaled up.
     let source: MediaStream = stream;
     const video = cropVideoRef.current;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
-    const side = Math.min(CROP, video?.videoWidth || 0, video?.videoHeight || 0);
-    if (video && canvas && ctx && side >= MIN_CROP) {
+    const w = video?.videoWidth || 0;
+    const h = video?.videoHeight || 0;
+
+    if (video && canvas && ctx && Math.min(w, h) >= MIN_CROP) {
+      const detector = await getDetector();
+      const found = detector ? faceBox(detector, video, performance.now()) : null;
+
+      // window size is fixed for the whole clip so no frame is ever rescaled
+      const side = Math.round(
+        Math.min(Math.max(found?.side ?? CROP, MIN_CROP), w, h)
+      );
+      const clamp = (v: number, max: number) => Math.min(Math.max(v, side / 2), max - side / 2);
+      let cx = clamp(found?.cx ?? w / 2, w);
+      let cy = clamp(found?.cy ?? h / 2, h);
+
       canvas.width = canvas.height = side;
+      let lastDetect = 0;
       const draw = () => {
-        const w = video.videoWidth;
-        const h = video.videoHeight;
-        if (w && h) ctx.drawImage(video, (w - side) / 2, (h - side) / 2, side, side, 0, 0, side, side);
+        const now = performance.now();
+        if (detector && now - lastDetect > DETECT_MS) {
+          lastDetect = now;
+          const box = faceBox(detector, video, now);
+          if (box) {
+            cx += (clamp(box.cx, w) - cx) * SMOOTH;
+            cy += (clamp(box.cy, h) - cy) * SMOOTH;
+          }
+        }
+        ctx.drawImage(video, Math.round(cx - side / 2), Math.round(cy - side / 2),
+                      side, side, 0, 0, side, side);
         drawRef.current = requestAnimationFrame(draw);
       };
       draw();
@@ -203,9 +270,7 @@ export function CameraPreview() {
   const ctx = useContext(RecorderCtx);
   const facing = ctx?.facing ?? "front";
   return (
-    <>
-      <FaceGuide />
-      <video
+    <video
       ref={ctx?.attach}
       autoPlay
       muted
@@ -220,30 +285,7 @@ export function CameraPreview() {
         transform: facing === "front" ? "scaleX(-1)" : "none",
         background: "#000",
       }}
-      />
-    </>
-  );
-}
-
-/** Shows where to sit: only the middle of the frame is uploaded, and filling this
-    oval is what "close enough" looks like. Sitting back is the single biggest
-    cause of bad readings. */
-function FaceGuide() {
-  return (
-    <div
-      aria-hidden
-      style={{
-        position: "absolute",
-        left: "50%",
-        top: "46%",
-        transform: "translate(-50%, -50%)",
-        height: "58%",
-        aspectRatio: "3 / 4",
-        border: "3px dashed rgba(255,255,255,0.55)",
-        borderRadius: "50%",
-        pointerEvents: "none",
-        zIndex: 5,
-      }}
     />
   );
 }
+
