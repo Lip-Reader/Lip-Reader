@@ -15,6 +15,8 @@ export type Recorder = {
   retry: () => void;
   /** Pick an existing video file. Web only for now; undefined on native. */
   pickClip?: () => Promise<ClipFile | null>;
+  /** How the speaker was framed in the last recording. Web only. */
+  framingRef?: { current: unknown };
 };
 
 export const CAMERA_KEY = "chaplin_camera";

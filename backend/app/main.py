@@ -115,12 +115,16 @@ class RunBody(BaseModel):
     raw: str
     corrected: str
     latency_ms: int | None = None
+    # how the speaker was framed: frame size, face size, crop window, rough distance
+    framing: dict | None = None
 
 
 @app.post("/api/runs")
 def runs(body: RunBody, user: dict | None = Depends(optional_user)):
     user_id = (user or {}).get("id")
-    return {"id": _db(db.add_run, user_id, body.raw, body.corrected, body.latency_ms)}
+    if body.framing:
+        log.info("framing %s", body.framing)
+    return {"id": _db(db.add_run, user_id, body.raw, body.corrected, body.latency_ms, body.framing)}
 
 
 @app.get("/api/db_ping")

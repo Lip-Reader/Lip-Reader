@@ -51,8 +51,10 @@ CREATE TABLE IF NOT EXISTS runs (
     raw TEXT NOT NULL,
     corrected TEXT NOT NULL,
     latency_ms INTEGER,
+    framing JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS framing JSONB;
 CREATE TABLE IF NOT EXISTS phrase_templates (
     id BIGSERIAL PRIMARY KEY,
     patient_key TEXT NOT NULL,
@@ -230,10 +232,12 @@ def list_audit(limit: int = 100) -> list[dict]:
 
 # --- runs ------------------------------------------------------------------
 
-def add_run(user_id: str | None, raw: str, corrected: str, latency_ms: int | None) -> int:
+def add_run(user_id: str | None, raw: str, corrected: str, latency_ms: int | None,
+            framing: dict | None = None) -> int:
     return _run(lambda c: c.execute(
-        "INSERT INTO runs (user_id, raw, corrected, latency_ms) VALUES (%s, %s, %s, %s) RETURNING id",
-        (user_id, raw, corrected, latency_ms),
+        "INSERT INTO runs (user_id, raw, corrected, latency_ms, framing) "
+        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        (user_id, raw, corrected, latency_ms, Json(framing) if framing else None),
     ).fetchone())["id"]
 
 

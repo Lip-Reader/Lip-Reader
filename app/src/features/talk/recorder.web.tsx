@@ -18,7 +18,13 @@ const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
 const MODEL =
   "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
 
-type Box = { cx: number; cy: number; side: number };
+type Box = { cx: number; cy: number; side: number; faceW: number; eyePx: number };
+
+/** Rough distance from the camera. Assumes an average 6.3cm between the pupils and
+    a typical ~74 degree lens, so it is an estimate, not a measurement. */
+function estimateCm(eyePx: number, frameW: number) {
+  return eyePx > 0 ? Math.round((6.3 / (1.5 * (eyePx / frameW))) ) : 0;
+}
 
 let detectorPromise: Promise<any> | null = null;
 
@@ -49,13 +55,25 @@ function faceBox(detector: any, video: HTMLVideoElement, now: number): Box | nul
   const res = detector?.detectForVideo?.(video, now);
   const bb = res?.detections?.[0]?.boundingBox;
   if (!bb) return null;
+  const kp = res.detections[0].keypoints;
+  const eyePx =
+    kp && kp.length >= 2
+      ? Math.abs(kp[0].x - kp[1].x) * (video.videoWidth || 0)
+      : 0;
   return {
     cx: bb.originX + bb.width / 2,
     cy: bb.originY + bb.height / 2,
     side: Math.max(bb.width, bb.height) * MARGIN,
+    faceW: bb.width,
+    eyePx,
   };
 }
 const HIDDEN = "position:fixed;left:-9999px;width:1px;height:1px";
+
+export type Framing = {
+  frameW: number; frameH: number; faceW: number; facePct: number;
+  cropSide: number; eyePx: number; distCm: number;
+};
 
 function pickMimeType(): string {
   return MIME_CANDIDATES.find((t) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t)) || "video/webm";
@@ -78,6 +96,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const cropVideoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawRef = useRef<number | null>(null);
+  const framingRef = useRef<Framing | null>(null);
 
   useEffect(() => {
     storage.get(CAMERA_KEY).then((v) => {
@@ -152,6 +171,17 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
       let cy = clamp(found?.cy ?? h / 2, h);
 
       canvas.width = canvas.height = side;
+      const record = (b: Box | null) => {
+        framingRef.current = {
+          frameW: w, frameH: h,
+          faceW: Math.round(b?.faceW ?? 0),
+          facePct: b ? Math.round((100 * b.faceW) / w) : 0,
+          cropSide: side,
+          eyePx: Math.round(b?.eyePx ?? 0),
+          distCm: b ? estimateCm(b.eyePx, w) : 0,
+        };
+      };
+      record(found);
       let lastDetect = 0;
       const draw = () => {
         const now = performance.now();
@@ -159,6 +189,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
           lastDetect = now;
           const box = faceBox(detector, video, now);
           if (box) {
+            record(box);
             cx += (clamp(box.cx, w) - cx) * SMOOTH;
             cy += (clamp(box.cy, h) - cy) * SMOOTH;
           }
@@ -254,7 +285,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const flip = useCallback(() => setFacing((f) => (f === "front" ? "back" : "front")), []);
 
   const value = useMemo(
-    () => ({ ready, error, facing, flip, start, stop, retry, pickClip, attach }),
+    () => ({ ready, error, facing, flip, start, stop, retry, pickClip, attach, framingRef }),
     [ready, error, facing, flip, start, stop, retry, pickClip, attach]
   );
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>;

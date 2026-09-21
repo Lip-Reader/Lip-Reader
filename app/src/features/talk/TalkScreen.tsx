@@ -117,7 +117,7 @@ function Talk() {
       }
       setText(result.response);
       setPhase("review");
-      logRun(await session.getToken(), result.raw, result.response, Date.now() - t0);
+      logRun(await session.getToken(), result.raw, result.response, Date.now() - t0, recorder.framingRef?.current);
     } catch (e) {
       const known = e instanceof Error && e.message && !e.message.startsWith("/api/");
       setToast(
@@ -134,7 +134,7 @@ function Talk() {
   async function choose(c: Candidate) {
     setText(c.text);
     setPhase("review");
-    logRun(await session.getToken(), rawResult, c.text, Date.now() - startedAt);
+    logRun(await session.getToken(), rawResult, c.text, Date.now() - startedAt, recorder.framingRef?.current);
   }
 
   const showText = phase === "review";

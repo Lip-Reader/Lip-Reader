@@ -160,8 +160,11 @@ export const putMySettings = (token: Token, patch: Partial<UserSettings>) =>
   request<UserSettings>(API_BASE, "/api/me/settings", json(patch, "PUT"), token);
 export const sendSupport = (token: Token, message: string) =>
   request<{ id: number }>(API_BASE, "/api/support", json({ message }), token);
-export const logRun = (token: Token, raw: string, corrected: string, latencyMs: number) =>
-  request(API_BASE, "/api/runs", json({ raw, corrected, latency_ms: latencyMs }), token).catch(() => {});
+export const logRun = (
+  token: Token, raw: string, corrected: string, latencyMs: number, framing?: unknown,
+) =>
+  request(API_BASE, "/api/runs",
+    json({ raw, corrected, latency_ms: latencyMs, framing: framing ?? null }), token).catch(() => {});
 
 export type AdminOverview = {
   users: number;
