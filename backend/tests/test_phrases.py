@@ -99,7 +99,8 @@ class TestExecuteLipsBranches:
         monkeypatch.setattr(vsr_main, "_decode_clip", lambda path: np.zeros((4, 8, 8, 3), np.uint8))
         self.target = seq(38, 1)
         monkeypatch.setattr(vsr, "extract_features", lambda frames: np.repeat(warped(self.target), 2, axis=0))
-        monkeypatch.setattr(vsr, "transcribe_clip", lambda frames: "I NEED MY BEDICINE NOW")
+        self.nbest = [{"text": "I NEED MY BEDICINE NOW", "score": -1.0}]
+        monkeypatch.setattr(vsr, "transcribe_clip_nbest", lambda frames: ("I NEED MY BEDICINE NOW", self.nbest))
         monkeypatch.setattr(vsr_main, "run_agent", lambda raw, conv: {
             "response": "I need my medicine now.",
             "steps": [{"module": "correct", "prompt": {}, "response": {"corrected": "I need my medicine now."}}],
@@ -121,7 +122,7 @@ class TestExecuteLipsBranches:
         assert set(body) == {"status", "error", "response", "steps"}
         assert body["response"] == "I need my medicine now."
         assert [s["module"] for s in body["steps"]] == ["vsr", "correct"]
-        assert body["steps"][0]["response"] == {"raw_transcription": "I NEED MY BEDICINE NOW"}
+        assert body["steps"][0]["response"] == {"raw_transcription": "I NEED MY BEDICINE NOW", "nbest": self.nbest}
         assert self.post(client, language="en") == body
 
     def test_hebrew_returns_ranked_candidates(self, client):
