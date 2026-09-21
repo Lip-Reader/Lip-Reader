@@ -10,7 +10,9 @@ const MIME_CANDIDATES = ["video/mp4", "video/webm;codecs=vp9,opus", "video/webm;
 // up to 640, and upscaling measured worse. Below it we send the frame uncropped.
 const CROP = 800;
 const MIN_CROP = 640;
-const MARGIN = 2.6;        // the detector box is tight; include jaw and chin
+// Multiplies the span of the four face keypoints (eyes, nose, mouth), the same
+// quantity _zoom_to_face uses on the server, so both crops mean the same thing.
+const MARGIN = 2.6;
 const DETECT_MS = 120;     // re-detect ~8x a second, not every frame
 const SMOOTH = 0.25;       // ease the window towards the face so it does not jitter
 const VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
@@ -55,17 +57,19 @@ function faceBox(detector: any, video: HTMLVideoElement, now: number): Box | nul
   const res = detector?.detectForVideo?.(video, now);
   const bb = res?.detections?.[0]?.boundingBox;
   if (!bb) return null;
+  const w = video.videoWidth || 0;
+  const h = video.videoHeight || 0;
   const kp = res.detections[0].keypoints;
-  const eyePx =
-    kp && kp.length >= 2
-      ? Math.abs(kp[0].x - kp[1].x) * (video.videoWidth || 0)
-      : 0;
+  if (!kp || kp.length < 4) return null;
+  const xs = kp.slice(0, 4).map((k: any) => k.x * w);
+  const ys = kp.slice(0, 4).map((k: any) => k.y * h);
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
   return {
     cx: bb.originX + bb.width / 2,
     cy: bb.originY + bb.height / 2,
-    side: Math.max(bb.width, bb.height) * MARGIN,
+    side: span * MARGIN,
     faceW: bb.width,
-    eyePx,
+    eyePx: Math.abs(xs[0] - xs[1]),
   };
 }
 const HIDDEN = "position:fixed;left:-9999px;width:1px;height:1px";
