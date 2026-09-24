@@ -1,22 +1,21 @@
-"""Hebrew phrase mode: phrase list, template bytes, matcher, and both execute_lips branches.
+"""The Hebrew phrase list, and both branches of /api/execute_lips.
 
-No model weights needed: the feature extractor and templates are stubbed."""
+No model weights: the lip reader, the corrector and the take store are all stubbed, so the
+service is exercised for its shapes and its refusals rather than for what it reads."""
 
 import numpy as np
 import pytest
 
-from backend.app import config, phrases
-from backend.app.phrases import decide, downsample, dtw_distance, pack, rank, unpack
+from backend.app import hebrew, phrases
+from backend.tests.test_hebrew import FPS, REST, seq, take
 
+SEQ_LEN = 40
 
-def seq(n: int, seed: int) -> np.ndarray:
-    return np.random.default_rng(seed).normal(size=(n, 768)).astype(np.float32)
-
-
-def warped(a: np.ndarray, seed: int = 9) -> np.ndarray:
-    """A slower, noisier rendition of the same sequence."""
-    stretched = np.repeat(a, 3, axis=0)[::2]
-    return stretched + 0.05 * np.random.default_rng(seed).normal(size=stretched.shape).astype(np.float32)
+ALTERNATIVES = [[("I", 1.0)], [("NEED", 0.9), ("KNEAD", 0.1)], [("MY", 1.0)],
+                [("BEDICINE", 0.6), ("MEDICINE", 0.35)], [("NOW", 1.0)]]
+TRANSCRIPT = "I NEED MY BEDICINE NOW"
+WORD_OPTIONS = "I(100%) NEED(90%)/KNEAD(10%) MY(100%) BEDICINE(60%)/MEDICINE(35%) NOW(100%)"
+CORRECTED = "I need my medicine now."
 
 
 class TestPhraseFile:
@@ -43,51 +42,20 @@ class TestPhraseFile:
             phrases.load_phrases("xx")
 
 
-class TestTemplateBytes:
-    def test_pack_roundtrip(self):
-        a = seq(38, 1)
-        blob, n, d = pack(a)
-        assert (n, d) == (38, 768) and len(blob) == 38 * 768 * 2
-        assert np.allclose(unpack(blob, n, d), a, atol=1e-2)
-
-    def test_downsample_halves_time(self):
-        assert downsample(seq(77, 2)).shape == (38, 768)
-        assert downsample(seq(1, 2)).shape == (1, 768)
-
-
-class TestMatcher:
-    def test_dtw_identity_and_order(self):
-        a, b = seq(38, 1), seq(38, 2)
-        assert dtw_distance(a, a) < 1e-6
-        assert dtw_distance(a, warped(a)) < dtw_distance(a, b)
-
-    def test_dtw_empty(self):
-        assert dtw_distance(seq(0, 1), seq(5, 1)) == float("inf")
-
-    def test_rank_puts_matching_phrase_first_and_is_confident(self):
-        target = seq(38, 1)
-        templates = {f"other_{i}": [seq(38, 100 + i)] for i in range(20)}
-        templates["target"] = [seq(30, 55), target + 0.03 * seq(38, 7)]
-        ranked = rank(warped(target), templates)
-        assert ranked[0][0] == "target"
-        assert [s for _, s in ranked] == sorted(s for _, s in ranked)
-        assert decide(ranked)
-
-    def test_not_confident_when_tied_or_far(self):
-        assert not decide([])
-        assert not decide([("a", phrases.ABS_MAX + 0.01)])
-        assert decide([("a", 0.2)])
-        assert not decide([("a", 0.30), ("b", 0.31)])
-        assert decide([("a", 0.30), ("b", 0.30 * (1 + phrases.MARGIN) + 0.001)])
-
-    def test_merge_and_seed_missing(self):
-        merged = phrases.merge_templates({"a": [seq(3, 1)]}, {"a": [seq(4, 2)], "b": [seq(5, 3)]})
-        assert {k: len(v) for k, v in merged.items()} == {"a": 2, "b": 1}
-        phrases.load_seed.cache_clear()
-        assert phrases.load_seed("nope") == {}
+def rows_for(enrolled, seed=30):
+    """Enrolment takes as the phrase_templates table holds them: both signatures packed,
+    ids from 1 up. enrolled: {phrase_id: (base sequence, how many takes)}."""
+    rows = []
+    for k, (phrase_id, (base, n)) in enumerate(enrolled.items()):
+        for i in range(n):
+            a, b = take(base, seed + k * 10 + i)
+            blob_a, frames, dim = hebrew.pack(a)
+            blob_b, _, _ = hebrew.pack(b)
+            rows.append({"id": len(rows) + 1, "phrase_id": phrase_id, "fps": FPS,
+                         "features": blob_a, "frames": frames, "dim": dim, "geometry": blob_b})
+    return rows
 
 
-@pytest.mark.skipif(not config.ANTHROPIC_API_KEY, reason="vsr_main imports the corrector agent (needs ANTHROPIC_API_KEY)")
 class TestExecuteLipsBranches:
     @pytest.fixture
     def client(self, monkeypatch):
@@ -96,55 +64,99 @@ class TestExecuteLipsBranches:
         from backend.app import vsr, vsr_main
 
         monkeypatch.setattr(vsr_main.config, "DISABLE_VSR", False)
-        monkeypatch.setattr(vsr_main, "_decode_clip", lambda path: np.zeros((4, 8, 8, 3), np.uint8))
-        self.target = seq(38, 1)
-        monkeypatch.setattr(vsr, "extract_features", lambda frames: np.repeat(warped(self.target), 2, axis=0))
-        self.nbest = [{"text": "I NEED MY BEDICINE NOW", "score": -1.0}]
-        monkeypatch.setattr(vsr, "transcribe_clip_nbest", lambda frames: ("I NEED MY BEDICINE NOW", self.nbest))
-        monkeypatch.setattr(vsr_main, "run_agent", lambda raw, conv: {
-            "response": "I need my medicine now.",
-            "steps": [{"module": "correct", "prompt": {}, "response": {"corrected": "I need my medicine now."}}],
-        })
-        monkeypatch.setattr(phrases, "load_seed", lambda lang="he": {})
-        self.templates = {
-            "pain_hurts": [self.target + 0.03 * seq(38, 7)],
-            "needs_thirsty": [seq(38, 200)],
-            "basics_yes": [seq(20, 201)],
-        }
-        monkeypatch.setattr(vsr_main, "_patient_templates", lambda key: self.templates if key == "k1" else {})
+        monkeypatch.setattr(vsr, "clip_fps", lambda path, duration_ms: 30.0)
+        monkeypatch.setattr(vsr, "read", lambda path: (TRANSCRIPT, ALTERNATIVES))
+
+        self.corrector_saw = {}
+
+        def fake_correct(raw, mappings=None, notes=None):
+            self.corrector_saw.update(raw=raw, mappings=mappings, notes=notes)
+            return CORRECTED
+
+        monkeypatch.setattr(vsr_main.corrector, "correct", fake_correct)
+
+        # the patient's takes, and the clip they are about to record: the query is another
+        # rendition of pain_hurts, so the matcher should put that phrase first
+        self.bases = {"pain_hurts": seq(SEQ_LEN, 21), "needs_thirsty": seq(SEQ_LEN, 22),
+                      "basics_yes": seq(SEQ_LEN, 23)}
+        self.rows = rows_for({"pain_hurts": (self.bases["pain_hurts"], 2),
+                              "needs_thirsty": (self.bases["needs_thirsty"], 2),
+                              "basics_yes": (self.bases["basics_yes"], 1)})
+        self.query = take(self.bases["pain_hurts"], 99)
+        monkeypatch.setattr(vsr, "signatures", lambda path: self.query)
+        self.real_takes = vsr_main._takes
+        monkeypatch.setattr(vsr_main, "_takes", lambda key: hebrew.Takes(self.rows if key == "k1" else []))
         return TestClient(vsr_main.app)
 
     def post(self, client, **data):
-        return client.post("/api/execute_lips", files={"file": ("clip.mp4", b"x", "video/mp4")}, data=data).json()
+        return client.post("/api/execute_lips",
+                           files={"file": ("clip.mp4", b"x", "video/mp4")}, data=data).json()
 
-    def test_english_shape_is_unchanged(self, client):
+    def test_english_shape(self, client):
         body = self.post(client)
         assert set(body) == {"status", "error", "response", "steps"}
-        assert body["response"] == "I need my medicine now."
+        assert body["response"] == CORRECTED
         assert [s["module"] for s in body["steps"]] == ["vsr", "correct"]
-        assert body["steps"][0]["response"] == {"raw_transcription": "I NEED MY BEDICINE NOW", "nbest": self.nbest}
+        assert body["steps"][0]["response"] == {"model": TRANSCRIPT, "word_options": WORD_OPTIONS}
+        assert body["steps"][0]["prompt"]["fps"] == 30.0
+        assert self.corrector_saw["raw"] == WORD_OPTIONS
         assert self.post(client, language="en") == body
 
+    def test_examples_and_notes_reach_the_corrector(self, client):
+        self.post(client, examples='[{"phrase":"x","model_output":"y"}]', notes='["keeps bees"]')
+        assert self.corrector_saw["mappings"] == [{"phrase": "x", "model_output": "y"}]
+        assert self.corrector_saw["notes"] == ["keeps bees"]
+
+    def test_malformed_examples_and_notes_are_dropped(self, client):
+        self.post(client, examples="not json", notes="{}")
+        assert self.corrector_saw["mappings"] == [] and self.corrector_saw["notes"] == []
+
+    def test_nothing_read_never_reaches_the_corrector(self, client, monkeypatch):
+        from backend.app import vsr
+
+        monkeypatch.setattr(vsr, "read", lambda path: ("", []))
+        body = self.post(client)
+        assert body["status"] == "error" and body["code"] == "nothing_read"
+        assert body["response"] is None and body["steps"] == []
+        assert self.corrector_saw == {}
+
+    def test_no_face_is_refused(self, client, monkeypatch):
+        from backend.app import vsr
+
+        def no_face(path):
+            raise vsr.NoFace("x")
+
+        monkeypatch.setattr(vsr, "read", no_face)
+        body = self.post(client)
+        assert body["status"] == "error" and body["code"] == "no_face"
+        assert body["error"] == "No face seen - record again"
+
     def test_hebrew_returns_ranked_candidates(self, client):
-        body = self.post(client, language="he", patient_key="k1", gender="f")
+        body = self.post(client, language="he", patient_key="k1", gender="m")
         assert body["status"] == "ok"
-        assert [c["id"] for c in body["candidates"]][0] == "pain_hurts"
-        assert len(body["candidates"]) == 3
-        assert body["response"] == "כואב לי"
-        assert body["confident"] is True
+        assert body["candidates"][0]["id"] == "pain_hurts"
+        assert 0 < len(body["candidates"]) <= hebrew.TOP_K
+        assert all(len(row) == 4 for row in body["hebrew"]["ranked"])
+        assert isinstance(body["confident"], bool)
+        assert body["hebrew"]["confident"] is body["confident"]
         assert [s["module"] for s in body["steps"]] == ["vsr", "match"]
-        assert body["steps"][1]["prompt"] == {"templates": 3, "seed": 0}
 
     def test_hebrew_gender_form(self, client):
-        self.templates["needs_thirsty"] = [self.target + 0.03 * seq(38, 8)]
-        del self.templates["pain_hurts"]
+        self.query = take(self.bases["needs_thirsty"], 98)
         body = self.post(client, language="he", patient_key="k1", gender="f")
+        assert body["candidates"][0]["id"] == "needs_thirsty"
         assert body["response"] == "אני צמאה"
 
-    def test_hebrew_without_templates(self, client):
+    def test_hebrew_without_enrolled_phrases(self, client):
         body = self.post(client, language="he", patient_key="nobody")
-        assert body["status"] == "error" and body["error"] == vsr_main_msg()
+        assert body["status"] == "error" and body["code"] == "not_enrolled"
         assert body["response"] is None and body["steps"] == []
+
+    def test_a_still_clip_is_refused(self, client):
+        a, b = self.query
+        self.query = (a, np.tile(REST, (len(b), 1)).astype(np.float32))
+        body = self.post(client, language="he", patient_key="k1")
+        assert body["status"] == "error" and body["code"] == "still"
 
     def test_enroll_without_storage(self, client, monkeypatch):
         from backend.app import vsr_main
@@ -154,7 +166,8 @@ class TestExecuteLipsBranches:
                         data={"patient_key": "k1", "phrase_id": "pain_hurts"}).json()
         assert r["status"] == "error" and r["error"] == vsr_main.NO_STORE
         r = client.get("/api/phrase_templates", params={"patient_key": "k1"}).json()
-        assert r == {"status": "ok", "error": None, "takes": {}, "seed_phrases": [], "storage": False}
+        assert r == {"status": "ok", "error": None, "takes": {}, "status_by_phrase": {},
+                     "self_test": None, "storage": False}
 
     def test_enroll_rejects_unknown_phrase(self, client, monkeypatch):
         from backend.app import vsr_main
@@ -164,24 +177,49 @@ class TestExecuteLipsBranches:
                         data={"patient_key": "k1", "phrase_id": "nope"}).json()
         assert r["status"] == "error" and "Unknown phrase" in r["error"]
 
-    def test_enroll_stores_features(self, client, monkeypatch):
+    def test_enroll_stores_both_signatures_and_says_how_it_went(self, client, monkeypatch):
         from backend.app import vsr_main
 
         saved = {}
+        rows = self.rows
+        rows[0]["id"] = 7   # the take just recorded, as the store hands it back
 
         class Store:
-            def add_phrase_template(self, key, pid, blob, n, d, max_takes):
-                saved.update(key=key, pid=pid, n=n, d=d, size=len(blob), max_takes=max_takes)
-                return 1
+            def add_phrase_template(self, key, pid, blob, n, d, geometry, fps):
+                saved.update(key=key, pid=pid, n=n, d=d, fps=fps,
+                             features=len(blob), geometry=len(geometry))
+                return 7
+
+            def list_phrase_templates(self, key):
+                return rows
 
         monkeypatch.setattr(vsr_main, "_template_store", lambda: Store())
+        monkeypatch.setattr(vsr_main, "_takes", self.real_takes)
         r = client.post("/api/enroll_phrase", files={"file": ("clip.mp4", b"x", "video/mp4")},
                         data={"patient_key": "k1", "phrase_id": "pain_hurts"}).json()
-        assert r == {"status": "ok", "error": None, "phrase_id": "pain_hurts", "takes": 1, "frames": saved["n"]}
-        assert saved["d"] == 768 and saved["size"] == saved["n"] * 768 * 2 and saved["max_takes"] == phrases.MAX_TAKES
+        assert r["status"] == "ok" and r["phrase_id"] == "pain_hurts" and r["takes"] == 2
+        assert saved["d"] == 768 and saved["fps"] == 30.0
+        assert saved["features"] == saved["n"] * 768 * 2
+        assert saved["geometry"] == saved["n"] * 8 * 2
+        assert r["frames"] == saved["n"]
+        assert r["verdict"]["code"] in {"first_take", "ok", "confused"}
 
+    def test_dropping_the_last_take(self, client, monkeypatch):
+        from backend.app import vsr_main
 
-def vsr_main_msg():
-    from backend.app import vsr_main
+        rows = self.rows
 
-    return vsr_main.NO_TEMPLATES
+        class Store:
+            def delete_last_phrase_take(self, key, pid):
+                newest = max([r for r in rows if r["phrase_id"] == pid], key=lambda r: r["id"])
+                rows.remove(newest)
+                return True
+
+            def list_phrase_templates(self, key):
+                return rows
+
+        monkeypatch.setattr(vsr_main, "_template_store", lambda: Store())
+        monkeypatch.setattr(vsr_main, "_takes", self.real_takes)
+        r = client.delete("/api/phrase_templates",
+                          params={"patient_key": "k1", "phrase_id": "needs_thirsty", "last": 1}).json()
+        assert r["status"] == "ok" and r["deleted"] == 1 and r["takes"] == 1

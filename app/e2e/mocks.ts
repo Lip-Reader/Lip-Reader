@@ -7,13 +7,14 @@ const HE_VOICES = [
   { id: "Oren", name: "Oren", description: "Hebrew male voice", gender: "male", lang: "HE_IL" },
   { id: "Yael", name: "Yael", description: "Hebrew female voice", gender: "female", lang: "HE_IL" },
 ];
+export const WORD_OPTIONS = "I(100%) WOULD(100%) LIKE(100%) SOME(90%)/SUM(8%) WHAT(60%)/WATER(30%) ER(50%)";
 const HE_CANDIDATES = [
   { id: "pain_hurts", text: "כואב לי", score: 0.31 },
   { id: "pain_head", text: "כואב לי הראש", score: 0.34 },
   { id: "needs_thirsty", text: "אני צמא", score: 0.52 },
 ];
 
-function formField(page: Parameters<Parameters<Page["route"]>[1]>[0], name: string): string | null {
+export function formField(page: Parameters<Parameters<Page["route"]>[1]>[0], name: string): string | null {
   const body = page.request().postDataBuffer()?.toString("latin1") ?? "";
   const m = new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)`).exec(body);
   return m ? Buffer.from(m[1], "latin1").toString("utf8") : null;
@@ -46,11 +47,20 @@ export async function mockBackend(page: Page, opts: { admin?: boolean } = {}) {
   await page.route("**/api/phrases/he", (r) => r.fulfill({ json: PHRASES }));
   await page.route("**/api/phrase_templates*", (r) =>
     r.request().method() === "DELETE"
-      ? r.fulfill({ json: { status: "ok", error: null, deleted: 1 } })
-      : r.fulfill({ json: { status: "ok", error: null, takes: { pain_hurts: 2 }, seed_phrases: ["basics_yes"], storage: true } })
+      ? r.fulfill({ json: { status: "ok", error: null, deleted: 1, takes: 1 } })
+      : r.fulfill({
+          json: {
+            status: "ok", error: null, storage: true,
+            takes: { pain_hurts: 2 },
+            status_by_phrase: { pain_hurts: { code: "ok", other: null } },
+            self_test: { n: 2, top1: 2, top3: 2 },
+          },
+        })
   );
   await page.route("**/api/enroll_phrase", (r) =>
-    r.fulfill({ json: { status: "ok", error: null, phrase_id: formField(r, "phrase_id"), takes: 3, frames: 30 } })
+    r.fulfill({
+      json: { status: "ok", error: null, phrase_id: formField(r, "phrase_id"), takes: 3, frames: 30, verdict: { code: "ok", other: null, takes: 3 } },
+    })
   );
   await page.route("**/api/execute_lips", async (r) => {
     await new Promise((res) => setTimeout(res, 300));
@@ -62,9 +72,10 @@ export async function mockBackend(page: Page, opts: { admin?: boolean } = {}) {
           response: HE_CANDIDATES[0].text,
           confident: false,
           candidates: HE_CANDIDATES,
+          hebrew: { ranked: HE_CANDIDATES.map((c) => [c.id, c.score, c.score - 0.1, c.score + 0.1]), confident: false },
           steps: [
-            { module: "vsr", prompt: { input: "<video clip>", language: "he" }, response: { frames: 38, dim: 768 } },
-            { module: "match", prompt: { templates: 6, seed: 0 }, response: { candidates: HE_CANDIDATES, confident: false } },
+            { module: "vsr", prompt: { input: "<video clip>", language: "he", fps: 30 }, response: { frames: 38 } },
+            { module: "match", prompt: { takes: 6, thresholds: {} }, response: { candidates: HE_CANDIDATES, confident: false } },
           ],
         },
       });
@@ -75,7 +86,7 @@ export async function mockBackend(page: Page, opts: { admin?: boolean } = {}) {
         error: null,
         response: "I would like some water.",
         steps: [
-          { module: "vsr", prompt: { input: "<video clip>" }, response: { raw_transcription: "I WOULD LIKE SOME WHAT ER" } },
+          { module: "vsr", prompt: { input: "<video clip>", fps: 30 }, response: { model: "I WOULD LIKE SOME WHAT ER", word_options: WORD_OPTIONS } },
           { module: "correct", prompt: {}, response: { corrected: "I would like some water." } },
         ],
       },
@@ -128,7 +139,11 @@ export async function mockBackend(page: Page, opts: { admin?: boolean } = {}) {
       r.fulfill({ json: { entries: [{ id: 1, actor: "adam@example.com", action: "settings.patch", detail: { lip_reading_enabled: true }, created_at: "2026-09-16T09:00:00Z" }] } })
     );
     await page.route("**/api/admin/runs**", (r) =>
-      r.fulfill({ json: { runs: [{ id: 1, user_id: "user_2", raw: "I WOULD LIKE SOME WHAT ER", corrected: "I would like some water.", latency_ms: 2140, created_at: "2026-09-16T09:30:00Z" }] } })
+      r.fulfill({
+        json: {
+          runs: [{ id: 1, user_id: "user_2", raw: "I WOULD LIKE SOME WHAT ER", word_options: WORD_OPTIONS, corrected: "I would like some water.", truth: null, heard: null, latency_ms: 2140, created_at: "2026-09-16T09:30:00Z" }],
+        },
+      })
     );
     await page.route("**/api/team_info", (r) =>
       r.fulfill({ json: { team_name: "Chaplin AI", students: [{ name: "Adam Sion", email: "adamsion74@gmail.com" }, { name: "Jonathan Eshel", email: "jonathan.eshel1@gmail.com" }] } })

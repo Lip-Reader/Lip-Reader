@@ -8,9 +8,11 @@ import { t } from "../../lib/i18n";
 import { Background, Body, GlassButton, GlassPanel, IconButton, Title } from "../../ui";
 import { colors, fontFamily, radius } from "../../ui/theme";
 import { canListen } from "../talk/listener";
+import NotesPanel from "./NotesPanel";
 import PhraseBank from "./PhraseBank";
 import Segmented from "./Segmented";
 import { useSettings } from "./settingsStore";
+import TeachPanel from "./TeachPanel";
 import VoicePicker from "./VoicePicker";
 
 export default function SettingsScreen() {
@@ -50,6 +52,17 @@ export default function SettingsScreen() {
             ]}
           />
         </Section>
+
+        {language === "en" && (
+          <>
+            <Section title={t(language, "teachSectionTitle")} hint={t(language, "teachSectionHint")}>
+              <TeachPanel />
+            </Section>
+            <Section title={t(language, "notesSectionTitle")} hint={t(language, "notesSectionHint")}>
+              <NotesPanel />
+            </Section>
+          </>
+        )}
 
         {language === "he" && (
           <Section title={t(language, "phrasesSectionTitle")} hint={t(language, "phrasesSectionHint")}>

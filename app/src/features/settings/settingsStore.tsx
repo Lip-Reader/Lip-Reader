@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Gender, getMySettings, getPublicSettings, Language, putMySettings, UserSettings } from "../../lib/api";
+import { Example, Gender, getMySettings, getPublicSettings, Language, putMySettings, UserSettings } from "../../lib/api";
 import { useSession } from "../../lib/auth";
 import { storage } from "../../lib/storage";
 
@@ -7,19 +7,26 @@ export const DEFAULT_VOICE_ID = "Brian";
 const KEY = "chaplin_settings";
 const FIELDS = ["voice_id", "language", "gender", "patient_key"] as const;
 
-// listen stays on this device: the microphone permission is per device too
-type Local = Partial<UserSettings> & { listen?: boolean };
+// listen stays on this device: the microphone permission is per device too.
+// examples (learning mode) and notes (about the patient) stay on the device as well, the
+// way the reference app keeps them with the installation; they go to the corrector with
+// every clip and are never stored on the server.
+type Local = Partial<UserSettings> & { listen?: boolean; examples?: Example[]; notes?: string[] };
 type Settings = {
   voiceId: string;
   language: Language;
   gender: Gender;
   patientKey: string | null;
   listen: boolean;
+  examples: Example[];
+  notes: string[];
   ready: boolean;
   setVoiceId: (id: string) => Promise<void>;
   setLanguage: (language: Language) => Promise<void>;
   setGender: (gender: Gender) => Promise<void>;
   setListen: (listen: boolean) => Promise<void>;
+  setExamples: (examples: Example[]) => Promise<void>;
+  setNotes: (notes: string[]) => Promise<void>;
 };
 
 const Ctx = createContext<Settings>({
@@ -28,11 +35,15 @@ const Ctx = createContext<Settings>({
   gender: "m",
   patientKey: null,
   listen: true,
+  examples: [],
+  notes: [],
   ready: false,
   setVoiceId: async () => {},
   setLanguage: async () => {},
   setGender: async () => {},
   setListen: async () => {},
+  setExamples: async () => {},
+  setNotes: async () => {},
 });
 
 async function readLocal(): Promise<Local> {
@@ -98,6 +109,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             gender: server.gender ?? local.gender,
             patient_key: server.patient_key ?? local.patient_key,
             listen: local.listen,
+            examples: local.examples,
+            notes: local.notes,
           };
         } catch {}
       }
@@ -129,6 +142,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setLanguage = useCallback((language: Language) => update({ language }), [update]);
   const setGender = useCallback((gender: Gender) => update({ gender }), [update]);
   const setListen = useCallback((listen: boolean) => update({ listen }, false), [update]);
+  const setExamples = useCallback((examples: Example[]) => update({ examples }, false), [update]);
+  const setNotes = useCallback((notes: string[]) => update({ notes }, false), [update]);
 
   const value = useMemo<Settings>(
     () => ({
@@ -137,13 +152,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       gender: state.gender === "f" ? "f" : "m",
       patientKey: state.patient_key ?? null,
       listen: state.listen !== false,
+      examples: state.examples ?? [],
+      notes: state.notes ?? [],
       ready,
       setVoiceId,
       setLanguage,
       setGender,
       setListen,
+      setExamples,
+      setNotes,
     }),
-    [state, ready, setVoiceId, setLanguage, setGender, setListen]
+    [state, ready, setVoiceId, setLanguage, setGender, setListen, setExamples, setNotes]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

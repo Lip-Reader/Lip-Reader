@@ -1,6 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { enrollPhrase, getPhrases, getPhraseTemplates, Phrase, PhraseBank as Bank, resetPhraseTemplates } from "../../lib/api";
+import {
+  ApiError,
+  dropLastTake,
+  enrollPhrase,
+  getPhrases,
+  getPhraseTemplates,
+  Phrase,
+  PhraseBank as Bank,
+  PhraseStatus,
+  resetPhraseTemplates,
+  SelfTest,
+  Verdict,
+} from "../../lib/api";
 import { GlassButton, IconButton } from "../../ui";
 import { colors, fontFamily, radius } from "../../ui/theme";
 import { CameraPreview, RecorderProvider, useRecorder } from "../talk/recorder";
@@ -9,11 +21,19 @@ import { useSettings } from "./settingsStore";
 
 const TARGET = 3;
 
+/** What the service says when it refuses a clip. */
+const REFUSALS: Record<string, string> = {
+  no_face: "לא נראו פנים - הקליטו שוב",
+  still: "השפתיים לא זזו - הקליטו שוב ובטאו את המשפט בבירור",
+  no_rest: "אין רגע שקט לפני או אחרי - עצרו רגע לפני ואחרי המשפט",
+};
+
 export default function PhraseBank() {
   const { patientKey, gender, setGender } = useSettings();
   const [bank, setBank] = useState<Bank | null>(null);
   const [takes, setTakes] = useState<Record<string, number>>({});
-  const [seed, setSeed] = useState<string[]>([]);
+  const [statusByPhrase, setStatusByPhrase] = useState<Record<string, PhraseStatus>>({});
+  const [selfTest, setSelfTest] = useState<SelfTest | null>(null);
   const [storageOn, setStorageOn] = useState(true);
   const [group, setGroup] = useState("");
   const [query, setQuery] = useState("");
@@ -32,18 +52,27 @@ export default function PhraseBank() {
       .catch(() => setError("לא ניתן היה לטעון את רשימת המשפטים."));
   }, []);
 
-  useEffect(() => {
+  const refreshTemplates = useCallback(() => {
     if (!patientKey) return;
     getPhraseTemplates(patientKey)
       .then((t) => {
         setTakes(t.takes);
-        setSeed(t.seed_phrases);
+        setStatusByPhrase(t.status_by_phrase);
+        setSelfTest(t.self_test);
         setStorageOn(t.storage);
       })
       .catch(() => {});
   }, [patientKey]);
 
+  useEffect(refreshTemplates, [refreshTemplates]);
+
   const text = (p: Phrase) => (gender === "f" ? p.text_f : p.text_m);
+  const textOf = (id: string | null) => {
+    const p = bank?.phrases.find((x) => x.id === id);
+    return p ? text(p) : id ?? "";
+  };
+  const statusText = (s: PhraseStatus) =>
+    s.code === "ok" ? "תקין" : s.code === "one_take" ? "הקלטה אחת - פחות אמין" : `מתבלבל עם ${textOf(s.other)}`;
   const q = query.trim();
   const shown = useMemo(() => {
     if (!bank) return [];
@@ -59,6 +88,8 @@ export default function PhraseBank() {
     try {
       await resetPhraseTemplates(patientKey);
       setTakes({});
+      setStatusByPhrase({});
+      setSelfTest(null);
       setConfirmReset(false);
     } catch (e) {
       setResetError(e instanceof Error && e.message ? e.message : "לא ניתן היה לאפס את המשפטים. נסו שוב.");
@@ -77,8 +108,12 @@ export default function PhraseBank() {
           text={text(active)}
           takes={takes[active.id] ?? 0}
           patientKey={patientKey}
+          textOf={textOf}
           onTake={(n) => setTakes((t) => ({ ...t, [active.id]: n }))}
-          onDone={() => setActive(null)}
+          onDone={() => {
+            refreshTemplates();
+            setActive(null);
+          }}
         />
       </RecorderProvider>
     );
@@ -137,9 +172,15 @@ export default function PhraseBank() {
           })}
         </ScrollView>
       )}
+      {selfTest && (
+        <Text style={styles.muted} testID="phrase-self-test">
+          בדיקה עצמית: {selfTest.top1}/{selfTest.n} נכון, שלושת הראשונים {selfTest.top3}/{selfTest.n}
+        </Text>
+      )}
       <ScrollView style={styles.list} contentContainerStyle={{ gap: 8 }} nestedScrollEnabled>
         {shown.map((p) => {
           const n = takes[p.id] ?? 0;
+          const status = statusByPhrase[p.id];
           return (
             <Pressable key={p.id} onPress={() => setActive(p)} style={styles.row} accessibilityRole="button" testID={`phrase-${p.id}`}>
               <View style={[styles.badge, n >= TARGET && styles.badgeDone]}>
@@ -148,7 +189,9 @@ export default function PhraseBank() {
                 </Text>
               </View>
               <Text style={[styles.phrase, styles.rtl]}>{text(p)}</Text>
-              {seed.includes(p.id) && <Text style={styles.seed}>seed</Text>}
+              {status && (
+                <Text style={[styles.status, styles.rtl, status.code === "confused" && styles.statusBad]}>{statusText(status)}</Text>
+              )}
             </Pressable>
           );
         })}
@@ -163,6 +206,7 @@ function EnrollPanel({
   text,
   takes,
   patientKey,
+  textOf,
   onTake,
   onDone,
 }: {
@@ -170,6 +214,7 @@ function EnrollPanel({
   text: string;
   takes: number;
   patientKey: string | null;
+  textOf: (id: string | null) => string;
   onTake: (n: number) => void;
   onDone: () => void;
 }) {
@@ -177,6 +222,7 @@ function EnrollPanel({
   const [state, setState] = useState<"idle" | "recording" | "uploading">("idle");
   const [error, setError] = useState<string | null>(null);
   const [count, setCount] = useState(takes);
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
 
   async function start() {
     setError(null);
@@ -188,14 +234,37 @@ function EnrollPanel({
     const clip = await recorder.stop();
     if (!clip || !patientKey) return setState("idle");
     try {
-      const r = await enrollPhrase(clip, patientKey, phrase.id);
+      const r = await enrollPhrase(clip, patientKey, phrase.id, recorder.durationRef?.current);
       setCount(r.takes);
+      setVerdict(r.verdict);
       onTake(r.takes);
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : "לא ניתן היה לשמור את ההקלטה. נסו שוב.");
+      const refusal = e instanceof ApiError && e.code ? REFUSALS[e.code] : undefined;
+      setVerdict(null);
+      setError(refusal || (e instanceof Error && e.message ? e.message : "לא ניתן היה לשמור את ההקלטה. נסו שוב."));
     }
     setState("idle");
   }
+
+  async function drop() {
+    if (!patientKey) return;
+    setError(null);
+    try {
+      const r = await dropLastTake(patientKey, phrase.id);
+      setCount(r.takes);
+      setVerdict(null);
+      onTake(r.takes);
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "לא ניתן היה למחוק את ההקלטה. נסו שוב.");
+    }
+  }
+
+  const verdictText = (v: Verdict) =>
+    v.code === "first_take"
+      ? "הקלטה אחת - הקליטו עוד אחת והבדיקה העצמית תוכל לשפוט"
+      : v.code === "ok"
+        ? `תקין (${v.takes}/${TARGET})`
+        : `קרוב יותר ל${textOf(v.other)} מאשר להקלטות של עצמו - מחקו אותו או הקליטו שוב`;
 
   const next = Math.min(count, TARGET) + 1;
   return (
@@ -213,10 +282,19 @@ function EnrollPanel({
       <Text style={styles.muted} testID="enroll-status">
         {count >= TARGET ? `נלמד עם ${count} הקלטות. אפשר להוסיף עוד או לסיים.` : `לקיחה ${next} מתוך ${TARGET}. בטאו את המשפט, ואז עצרו.`}
       </Text>
+      {verdict && (
+        <Text
+          style={[styles.verdict, styles.rtl, verdict.code === "ok" ? styles.verdictOk : styles.verdictWarn]}
+          testID="enroll-verdict"
+        >
+          {verdictText(verdict)}
+        </Text>
+      )}
       {(error || recorder.error) && <Text style={styles.error}>{error || recorder.error}</Text>}
       {state === "idle" && <GlassButton label="הקלטה" variant="primary" onPress={start} disabled={!recorder.ready} testID="enroll-record" />}
       {state === "recording" && <GlassButton label="עצור" variant="danger" onPress={stop} testID="enroll-stop" />}
       {state === "uploading" && <ActivityIndicator color={colors.accent} />}
+      {count > 0 && <GlassButton label="מחיקת ההקלטה האחרונה" onPress={drop} testID="enroll-drop" />}
       <GlassButton label="סיום" onPress={onDone} testID="enroll-done" />
     </View>
   );
@@ -261,7 +339,11 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 12, fontWeight: "600", color: colors.muted, fontFamily },
   badgeTextDone: { color: colors.white },
   phrase: { flex: 1, fontSize: 17, fontWeight: "500", color: colors.text, fontFamily },
-  seed: { fontSize: 11, color: colors.accent, fontFamily },
+  status: { fontSize: 12, color: colors.muted, fontFamily, maxWidth: 140 },
+  statusBad: { color: colors.danger },
+  verdict: { fontSize: 14, fontWeight: "600", fontFamily },
+  verdictOk: { color: colors.success },
+  verdictWarn: { color: "#B45309" },
   enrollHeader: { flexDirection: "row-reverse", alignItems: "center", gap: 10 },
   enrollHeaderTitle: { fontSize: 16, fontWeight: "600", color: colors.text, fontFamily },
   preview: { height: 420, borderRadius: radius.md, overflow: "hidden", backgroundColor: "#000" },

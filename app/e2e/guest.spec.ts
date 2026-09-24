@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mockBackend } from "./mocks";
+import { formField, mockBackend, WORD_OPTIONS } from "./mocks";
 
 test.beforeEach(async ({ page }) => mockBackend(page));
 
@@ -27,6 +27,7 @@ test("guest talk flow: record, sentence, speak", async ({ page }) => {
   await page.waitForTimeout(800);
   await page.getByTestId("stop-button").click();
   await expect(page.getByTestId("sentence")).toHaveText("I would like some water.");
+  await expect(page.getByTestId("read")).toHaveText("Read: I WOULD LIKE SOME WHAT ER");
   const between = calls.slice(before).filter((u) => !u.includes("localhost:517"));
   expect(between.filter((u) => u.includes("/api/execute_lips"))).toHaveLength(1);
   expect(between.filter((u) => u.includes("/api/execute_lips") || u.includes("/speak"))).toHaveLength(1);
@@ -178,7 +179,7 @@ test("hebrew: talk shows candidates when unsure and speaks the chosen one", asyn
   await expect(page.getByTestId("sentence")).toHaveText("כואב לי הראש");
   await page.getByTestId("speak-button").click();
   await expect(page.getByTestId("sentence")).toHaveText("כואב לי הראש");
-  expect(runs).toEqual([expect.objectContaining({ corrected: "כואב לי הראש", raw: expect.stringContaining("pain_hurts:0.31") })]);
+  expect(runs).toEqual([expect.objectContaining({ corrected: "כואב לי הראש", raw: "pain_hurts", truth: "pain_head", hebrew: expect.objectContaining({ confident: false }) })]);
 
   await expect(page.getByTestId("reset-button")).toBeVisible();
   await page.getByTestId("reset-button").click();
@@ -235,4 +236,128 @@ test("flip camera switches to the back camera and remembers it", async ({ page }
   await expect(page.locator("video")).toHaveAttribute("data-facing", "back");
   await expect(page.getByTestId("talk-button")).toBeEnabled();
   expect(await facingOf(-1)).toBe("environment");
+});
+
+test("the run log carries the word options, the clip length reaches the service", async ({ page }) => {
+  const runs: Record<string, unknown>[] = [];
+  await page.route("**/api/runs", (r) => {
+    runs.push(r.request().postDataJSON());
+    r.fulfill({ json: { id: 1 } });
+  });
+  const fields: Record<string, string | null> = {};
+  page.on("request", (r) => {
+    if (r.url().includes("/api/execute_lips")) {
+      const body = r.postDataBuffer()?.toString("latin1") ?? "";
+      for (const name of ["duration_ms", "examples", "notes"]) {
+        const m = new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)`).exec(body);
+        fields[name] = m ? Buffer.from(m[1], "latin1").toString("utf8") : null;
+      }
+    }
+  });
+  await page.goto("/talk");
+  await expect(page.getByTestId("talk-button")).toBeEnabled();
+  await page.getByTestId("talk-button").click();
+  await page.waitForTimeout(800);
+  await page.getByTestId("stop-button").click();
+  await expect(page.getByTestId("sentence")).toHaveText("I would like some water.");
+  expect(Number(fields.duration_ms)).toBeGreaterThan(500);
+  expect(fields.examples).toBeNull();
+  expect(fields.notes).toBeNull();
+  await expect.poll(() => runs).toEqual([
+    expect.objectContaining({ raw: "I WOULD LIKE SOME WHAT ER", word_options: WORD_OPTIONS, clip_fps: 30, truth: null }),
+  ]);
+});
+
+test("teach: a confirmed sentence becomes an example the next clip carries", async ({ page }) => {
+  const runs: Record<string, unknown>[] = [];
+  await page.route("**/api/runs", (r) => {
+    runs.push(r.request().postDataJSON());
+    r.fulfill({ json: { id: 1 } });
+  });
+  const examples: (string | null)[] = [];
+  await page.route("**/api/execute_lips", async (r) => {
+    examples.push(formField(r, "examples"));
+    await r.fallback();
+  });
+  await page.goto("/settings");
+  await expect(page.getByTestId("teach-count")).toHaveText(/0 examples saved/);
+  const record = page.getByTestId("teach-record");
+  await expect(record).toBeEnabled();
+  await record.click();
+  await page.waitForTimeout(600);
+  await page.getByTestId("teach-stop").click();
+  await expect(page.getByTestId("teach-read")).toHaveText("Read: I WOULD LIKE SOME WHAT ER");
+  await expect(page.getByTestId("teach-chaplin")).toHaveText("Chaplin: I would like some water.");
+  await page.getByTestId("teach-no").click();
+  await page.getByTestId("teach-fix").fill("I would like some water, please.");
+  await page.getByTestId("teach-save").click();
+  await expect(page.getByTestId("teach-count")).toHaveText(/1 examples saved/);
+  await expect.poll(() => runs).toEqual([expect.objectContaining({ truth: "I would like some water, please.", word_options: WORD_OPTIONS })]);
+  expect(examples).toEqual([null]);
+
+  await page.goto("/talk");
+  await expect(page.getByTestId("talk-button")).toBeEnabled();
+  await page.getByTestId("talk-button").click();
+  await page.waitForTimeout(600);
+  await page.getByTestId("stop-button").click();
+  await expect(page.getByTestId("sentence")).toHaveText("I would like some water.");
+  expect(JSON.parse(examples[1] ?? "[]")).toEqual([{ phrase: "I would like some water, please.", model_output: WORD_OPTIONS }]);
+
+  await page.goto("/settings");
+  await page.getByTestId("teach-delete-0").click();
+  await expect(page.getByTestId("teach-count")).toHaveText(/0 examples saved/);
+});
+
+test("notes: a note about the patient goes to the corrector with every clip", async ({ page }) => {
+  const notes: (string | null)[] = [];
+  await page.route("**/api/execute_lips", async (r) => {
+    notes.push(formField(r, "notes"));
+    await r.fallback();
+  });
+  await page.goto("/settings");
+  await page.getByTestId("note-add").click();
+  await page.getByTestId("note-input").fill("He keeps bees and sells honey");
+  await page.getByTestId("note-save").click();
+  await expect(page.getByTestId("note-0")).toContainText("He keeps bees and sells honey");
+  await page.reload();
+  await expect(page.getByTestId("note-0")).toContainText("He keeps bees and sells honey");
+
+  await page.goto("/talk");
+  await expect(page.getByTestId("talk-button")).toBeEnabled();
+  await page.getByTestId("talk-button").click();
+  await page.waitForTimeout(600);
+  await page.getByTestId("stop-button").click();
+  await expect(page.getByTestId("sentence")).toBeVisible();
+  expect(JSON.parse(notes[0] ?? "[]")).toEqual(["He keeps bees and sells honey"]);
+
+  await page.goto("/settings");
+  await page.getByTestId("note-delete-0").click();
+  await expect(page.getByTestId("note-0")).toHaveCount(0);
+});
+
+test("hebrew: the phrase list shows each phrase's standing and the self-test", async ({ page }) => {
+  await page.addInitScript((s) => localStorage.setItem("chaplin_settings", JSON.stringify(s)), HEBREW_SETTINGS);
+  await page.goto("/settings");
+  await expect(page.getByTestId("phrase-self-test")).toHaveText("בדיקה עצמית: 2/2 נכון, שלושת הראשונים 2/2");
+  await page.getByTestId("group-pain").click();
+  await expect(page.getByTestId("phrase-pain_hurts")).toContainText("תקין");
+  await page.getByTestId("phrase-pain_hurts").click();
+  await page.getByTestId("enroll-record").click();
+  await page.waitForTimeout(600);
+  await page.getByTestId("enroll-stop").click();
+  await expect(page.getByTestId("enroll-verdict")).toHaveText("תקין (3/3)");
+  await page.getByTestId("enroll-drop").click();
+  await expect(page.getByTestId("enroll-status")).toHaveText(/לקיחה 2 מתוך 3/);
+});
+
+test("desktop: the talk screen sits in a phone-sized frame, not the whole window", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/talk");
+  await expect(page.getByTestId("talk-button")).toBeEnabled();
+  const video = await page.locator("video").first().boundingBox();
+  expect(video?.width).toBe(480);
+  expect(video?.height).toBeLessThanOrEqual(752);
+  expect(video?.x).toBe(400);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => (await page.locator("video").first().boundingBox())?.width).toBe(390);
 });

@@ -124,7 +124,11 @@ def main() -> int:
     print(f"status: {r.status_code}  id: {body.get('id')}  empty-message -> {empty}")
 
     step("7/16  POST /api/runs (guest)")
-    r = client.post("/api/runs", json={"raw": "HELLO WORLD", "corrected": "Hello world.", "latency_ms": 1200})
+    r = client.post("/api/runs", json={
+        "raw": "HELLO WORLD", "corrected": "Hello world.", "latency_ms": 1200,
+        "word_options": "HELLO(91%)/FELLOW(5%) WORLD(88%)", "notes": ["Keeps bees"],
+        "clip_fps": 29.9, "truth": "Hello world.", "hebrew": None,
+    })
     body = r.json() if r.status_code == 200 else {}
     ok["runs"] = r.status_code == 200 and isinstance(body.get("id"), int)
     print(f"status: {r.status_code}  id: {body.get('id')}")
@@ -155,19 +159,25 @@ def main() -> int:
         print(f"status: {r.status_code}  latency: {dt:.1f}s  clip: {kind}")
         if body.get("status") == "ok":
             steps = body.get("steps", [])
+            vsr_step = steps[0] if steps else {}
             ok["execute_lips"] = (
                 bool(body.get("response"))
-                and steps and steps[0]["module"] == "vsr"
+                and vsr_step.get("module") == "vsr"
+                and {"model", "word_options"} <= set(vsr_step.get("response", {}))
                 and all({"module", "prompt", "response"} <= set(s) for s in steps)
             )
+            print(f"read     : {vsr_step.get('response', {}).get('model')!r}")
+            print(f"options  : {vsr_step.get('response', {}).get('word_options')!r}")
             print(f"response : {body.get('response')!r}")
             print(f"steps    : {[s['module'] for s in steps]}")
             speak_text = body.get("response") or speak_text
         else:
-            # no face / no speech -> the error shape is the correct outcome
-            shape_ok = body.get("response") is None and body.get("steps") == [] and body.get("error")
+            # no face / nothing read -> the error shape, with its code, is the correct outcome
+            shape_ok = (body.get("response") is None and body.get("steps") == []
+                        and body.get("error") and body.get("code"))
             ok["execute_lips"] = bool(shape_ok)
-            print(f"error    : {body.get('error')!r} (valid error shape - no face/speech in clip)")
+            print(f"error    : {body.get('error')!r} code: {body.get('code')!r}"
+                  f" (valid error shape - no face/nothing read in clip)")
     finally:
         if os.path.exists(clip_path):
             os.remove(clip_path)
@@ -211,14 +221,20 @@ def main() -> int:
         body = r.json() if r.status_code == 200 else {}
         print(f"status: {r.status_code}  latency: {time.time() - t0:.1f}s  clip: {kind}")
         if body.get("status") == "ok":
+            ranked = (body.get("hebrew") or {}).get("ranked", [])
             ok["execute_lips_he"] = (
-                isinstance(body.get("candidates"), list) and isinstance(body.get("confident"), bool)
+                isinstance(body.get("candidates"), list) and len(body["candidates"]) <= 3
+                and isinstance(body.get("confident"), bool)
+                and all(len(row) == 4 for row in ranked)
                 and [s["module"] for s in body.get("steps", [])] == ["vsr", "match"]
             )
-            print(f"response : {body.get('response')!r}  confident: {body.get('confident')}  candidates: {body.get('candidates')}")
+            print(f"response : {body.get('response')!r}  confident: {body.get('confident')}"
+                  f"  candidates: {body.get('candidates')}  ranked: {len(ranked)} phrases")
         else:
-            ok["execute_lips_he"] = bool(body.get("response") is None and body.get("steps") == [] and body.get("error"))
-            print(f"error    : {body.get('error')!r} (valid error shape - no face, or no templates enrolled)")
+            ok["execute_lips_he"] = bool(body.get("response") is None and body.get("steps") == []
+                                         and body.get("error") and body.get("code"))
+            print(f"error    : {body.get('error')!r} code: {body.get('code')!r}"
+                  f" (valid error shape - no face, still clip, or nothing enrolled)")
 
         step("15/16  POST /api/enroll_phrase")
         t0 = time.time()
@@ -228,11 +244,16 @@ def main() -> int:
         body = r.json() if r.status_code == 200 else {}
         print(f"status: {r.status_code}  latency: {time.time() - t0:.1f}s")
         if body.get("status") == "ok":
-            ok["enroll_phrase"] = isinstance(body.get("takes"), int) and body.get("phrase_id") == "basics_yes"
-            print(f"takes    : {body.get('takes')}  frames: {body.get('frames')}")
+            verdict = body.get("verdict") or {}
+            ok["enroll_phrase"] = (
+                isinstance(body.get("takes"), int) and body.get("phrase_id") == "basics_yes"
+                and verdict.get("code") in ("first_take", "ok", "confused")
+            )
+            print(f"takes    : {body.get('takes')}  frames: {body.get('frames')}  verdict: {verdict}")
         else:
             ok["enroll_phrase"] = bool(body.get("response") is None and body.get("error"))
-            print(f"error    : {body.get('error')!r} (valid error shape - no face, or storage not configured)")
+            print(f"error    : {body.get('error')!r} code: {body.get('code')!r}"
+                  f" (valid error shape - no face, still clip, or storage not configured)")
         bad = vsr_client.post("/api/enroll_phrase", files={"file": ("clip.mp4", b"x", "video/mp4")},
                               data={"patient_key": "e2e-check", "phrase_id": "nope"}).json()
         ok["enroll_phrase"] = ok["enroll_phrase"] and bad.get("status") == "error"
@@ -247,9 +268,11 @@ def main() -> int:
     d = vsr_client.delete("/api/phrase_templates", params={"patient_key": "e2e-check"}).json()
     ok["phrase_templates"] = (
         r.status_code == 200 and body.get("status") == "ok" and isinstance(body.get("takes"), dict)
+        and isinstance(body.get("status_by_phrase"), dict) and "self_test" in body
         and (d.get("status") == "ok" or not config.DATABASE_URL)
     )
-    print(f"status: {r.status_code}  takes: {body.get('takes')}  storage: {body.get('storage')}  seed phrases: {len(body.get('seed_phrases', []))}"
+    print(f"status: {r.status_code}  takes: {body.get('takes')}  storage: {body.get('storage')}"
+          f"  status by phrase: {body.get('status_by_phrase')}  self-test: {body.get('self_test')}"
           f"  cleanup deleted: {d.get('deleted')}")
 
     print("\n" + "=" * 44)

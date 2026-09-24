@@ -29,10 +29,12 @@ app/                Expo app (Expo Router; iOS, Android, web). app/app/*.tsx = r
                     app/src/features/* = screens, app/src/ui = glass UI kit, app/e2e = Playwright.
 backend/app/        FastAPI code. main.py = API backend (TTS, settings, support, runs,
                     admin, workshop metadata); vsr_main.py = VSR service (/api/execute_lips);
-                    agent/ = LangChain corrector; auth.py (Clerk), db.py (Supabase), tts.py (Inworld).
+                    corrector.py = the one Claude call; hebrew.py = Hebrew matcher + self-test;
+                    auth.py (Clerk), db.py (Supabase), tts.py (Inworld).
 backend/pipelines/  Vendored Auto-AVSR inference (mediapipe face crop -> model -> beam search).
 backend/espnet/     Vendored ESPnet transformer/beam-search internals used by pipelines/. Upstream: don't edit.
-backend/tests/      pytest (agent tests, clip eval) + e2e_check.py (every /api stage, PASS/FAIL).
+backend/tests/      pytest (matcher, corrector, service, clip eval) + e2e_check.py (every /api stage)
+                    + hebrew_eval.py (one patient's Hebrew standing, from the database).
 assets/             VSR config (configs/), test-clip ground truths, architecture.png.
 api/index.py        Vercel entry for backend/app/main.py.   modal_app.py: Modal deploy of the VSR service.
 ```
@@ -42,12 +44,26 @@ api/index.py        Vercel entry for backend/app/main.py.   modal_app.py: Modal 
   Python function, deps in `requirements.txt`, no torch) and the VSR service
   (Modal GPU, `modal_app.py`; local port 8001). The device owns the camera; only
   text leaves it. Video is deleted right after inference.
-- **Hebrew phrase mode** (`backend/app/phrases.py`, `assets/phrases/he.json`,
+- **Reading a clip** (`backend/app/vsr.py`): the whole camera frame is uploaded (1280x720
+  on the web), OpenCV reads the file as it is, Mediapipe crops the mouth, and the model
+  gives the transcript plus per-word options with CTC probabilities (`WORD(92%)/ALT(5%)`).
+  The app sends `duration_ms` so the service knows the clip's real frame rate. This is the
+  reference desktop app's flow (`~/Desktop/tmp/lipreader`); keep the two in step.
+- **Corrector** (`backend/app/corrector.py`): one `claude-sonnet-5` call with adaptive
+  thinking over the word-options string; the answer is its last line, with a full stop.
+  The prompt also carries **examples** (learning mode: sentences the clinician confirmed
+  for this speaker, Settings → Teach Chaplin) and **notes** about the patient (Settings →
+  About the patient, typed or dictated). Both live on the device with the other local
+  settings and travel with every clip; the server never stores them.
+- **Hebrew phrase mode** (`backend/app/hebrew.py`, `phrases.py`, `assets/phrases/he.json`,
   `app/src/features/settings/PhraseBank.tsx`): no Hebrew VSR model exists, so
-  `language=he` on `/api/execute_lips` matches the clip's encoder features
-  (`vsr.extract_features`) against per-patient templates (`phrase_templates`, keyed by
-  a device-generated `patient_key`) with DTW; unsure results return top-3 `candidates`
-  that the Talk screen shows as buttons. English requests never enter this branch.
+  `language=he` on `/api/execute_lips` matches two signatures of the clip (encoder
+  features and FaceMesh lip geometry, `vsr.signatures`) against the patient's takes
+  (`phrase_templates`, keyed by a device-generated `patient_key`) with DTW. Weights and
+  thresholds come from a leave-one-take-out self-test over those takes (`hebrew.Takes`),
+  recomputed per request; a clip with no face, no lip movement or no still moment is
+  refused with a `code`. Unsure results return top-3 `candidates` the Talk screen shows
+  as buttons, and the tap is logged as the truth. English requests never enter this branch.
 - **UI language:** `app/src/lib/i18n.ts` holds every chrome string (buttons, headers, hints,
   toasts) in English and Hebrew; screens call `t(language, key)` so choosing Hebrew in Settings
   relabels the whole app, not just the phrase content. The Talk screen's Reset button (shown once
@@ -68,14 +84,16 @@ api/index.py        Vercel entry for backend/app/main.py.   modal_app.py: Modal 
   `.github/workflows/db-keepalive.yml` pings `/api/db_ping` every 5 min.
 - **Platform splits** live only in `*.web.tsx` / `*.native.tsx` files
   (recorder incl. the front/back camera `facing`, speaker, storage, SignInScreen).
-- **Agent:** `backend/app/agent/agent.py`, single `correct` call via LangChain
-  `create_agent`; `run_agent(raw, conversation)` keeps the history argument for evals.
+- **Runs** (`runs` table): one row per recording, like the reference's `runs.jsonl`:
+  the model's reading, the word options, the sentence, the notes used, clip fps, the
+  confirmed truth and the Hebrew ranking.
+- **Desktop:** the Talk screen sits in a centred phone-sized frame at 1024px and wider.
 
 ## Commands
 ```bash
 ./dev-up.sh                                   # API :8000, VSR :8001, web :5173
 uv run python backend/tests/e2e_check.py      # every /api stage, PASS/FAIL
-uv run --extra test pytest backend/tests -v -s  # agent tests (ANTHROPIC_API_KEY), clip eval (weights + .mov clips)
+uv run --extra test pytest backend/tests -v -s  # matcher/corrector/service tests (ANTHROPIC_API_KEY), clip eval (weights + .mov clips)
 cd app && npm run typecheck                   # web + native
 cd app && npm run e2e                         # Playwright; run outside the Claude sandbox
 cd app && npm run shots                       # screenshots -> app/screenshots/

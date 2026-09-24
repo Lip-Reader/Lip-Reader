@@ -21,9 +21,9 @@ camera clip ─▶ vsr (Auto-AVSR) ─▶ correct ─▶ sentence ─▶ Speak (
 |-------------|----------------------------------------------------------------------------|
 | `app/`      | Expo app (Expo Router, React Native + react-native-web). Routes in `app/app/`, features in `app/src/features/`, glass UI kit in `app/src/ui/`. Web export deployed on Vercel. |
 | `backend/app/main.py` | API backend (FastAPI): voices/TTS, settings, support, run log, admin API, workshop metadata. Vercel Python function via `api/index.py`. |
-| `backend/app/vsr_main.py` | vsr_lip_reader service: `POST /api/execute_lips` (clip → VSR → corrector; Hebrew: clip → encoder features → phrase match) and the Hebrew enrollment endpoints. Runs on Modal (`modal_app.py`). |
-| `backend/app/phrases.py` · `assets/phrases/he.json` | Hebrew phrase mode: the 100-phrase list, template packing, DTW matcher and confidence rule. |
-| `backend/app/agent/` | Single-pass corrector agent (LangChain `create_agent`). |
+| `backend/app/vsr_main.py` | vsr_lip_reader service: `POST /api/execute_lips` (clip → VSR word options → corrector; Hebrew: clip → two signatures → phrase match) and the Hebrew enrollment endpoints. Runs on Modal (`modal_app.py`). |
+| `backend/app/corrector.py` | The corrector: one Claude call over the model's word options, with the speaker's confirmed examples and the clinician's notes in the prompt. |
+| `backend/app/hebrew.py` · `phrases.py` · `assets/phrases/he.json` | Hebrew phrase mode: the two signatures, the matcher, the self-test the thresholds come from, and the 100-phrase list. |
 | `backend/app/auth.py` · `admin.py` · `db.py` | Clerk JWT verification + admin role check, admin router, Supabase Postgres store. |
 | `backend/pipelines/`, `backend/espnet/` | Vendored VSR internals (upstream, not rewritten). |
 | `assets/`   | VSR config, test-video ground truths, `architecture.png`, Hebrew phrase list (`phrases/he.json`). |
@@ -37,8 +37,8 @@ and feedback are stored in Postgres).
 
 | Method & path | Auth | Purpose |
 |---|---|---|
-| `POST /api/execute_lips` (VSR service) | – | mp4/webm clip → `{ status, error, response, steps }`; steps start with `vsr`. Form field `language=he` (+ `patient_key`, `gender`) switches to phrase matching and adds `confident` and `candidates` (top 3) |
-| `POST /api/enroll_phrase` · `GET|DELETE /api/phrase_templates` (VSR service) | – | Hebrew enrollment: one take → encoder features stored per `patient_key` (never video) · take counts per phrase / reset |
+| `POST /api/execute_lips` (VSR service) | – | mp4/webm clip → `{ status, error, response, steps }`; the `vsr` step carries the model's reading and its word options, `correct` the sentence. Optional `duration_ms`, `examples`, `notes`. Form field `language=he` (+ `patient_key`, `gender`) switches to phrase matching and adds `confident`, `candidates` (top 3) and `hebrew` (the whole ranking). Refusals carry a `code` (`no_face`, `nothing_read`, `still`, `no_rest`, `not_enrolled`) |
+| `POST /api/enroll_phrase` · `GET|DELETE /api/phrase_templates` (VSR service) | – | Hebrew enrollment: one take → both signatures stored per `patient_key` (never video), with a verdict · standing per phrase and the self-test / reset, or `last=1` to drop a phrase's newest take |
 | `GET /api/phrases/he` | – | the Hebrew phrase list (10 groups × 10, masculine and feminine forms) |
 | `POST /speak` · `GET /voices?lang=en` · `POST /voice/select` · `POST /voice/enroll` | – | TTS with word timestamps, voice catalog per language (`he` → Inworld's Hebrew voices) / selection / cloning |
 | `GET /api/settings/public` | – | `{ default_voice_id, lip_reading_enabled }` |
@@ -83,7 +83,8 @@ needs a development build: `npx expo run:ios`).
 
 ```bash
 uv run python backend/tests/e2e_check.py    # every backend stage, PASS/FAIL
-uv run --extra test pytest backend/tests -v -s  # agent tests + clip eval (needs weights/clips)
+uv run --extra test pytest backend/tests -v -s  # matcher, corrector and service tests; clip eval needs weights/clips
+uv run python backend/tests/hebrew_eval.py --patient <patient_key>  # how Hebrew mode is doing for one patient
 cd app && npm run typecheck && npm run e2e  # types (web + native), Playwright flows
 cd app && npm run shots                     # screenshots → app/screenshots/
 ```
@@ -101,15 +102,21 @@ cd app && npm run shots                     # screenshots → app/screenshots/
 
 Hebrew has no lip-reading model, so Hebrew works from a fixed list of 100 phrases that
 each patient teaches the app: pick Hebrew in Settings, open a phrase, mouth it three
-times. Each take is turned into visual encoder features on the VSR service (the same
-Auto-AVSR encoder, stopped before the English text decoder) and stored under a random
-patient key; the clip is deleted. On Talk, the clip's features are compared with every
-enrolled phrase by dynamic time warping; a clear winner is spoken, otherwise the three
-best matches are shown to tap. Optional speaker-independent templates can be shipped as
-`assets/phrases/he_seed.npz` (`backend/tools/build_phrase_seed.py` from clips under
-`assets/hebrew_clips/<phrase_id>/`). Accuracy is measured by
+times. A take is measured two ways on the VSR service: by the lip-reading network's
+per-frame features (the same Auto-AVSR encoder, stopped before the English text decoder)
+and by eight lip measurements FaceMesh gives (opening, width, area, lip thicknesses,
+corner lift, protrusion) taken in a frame fixed to the head, so turning or leaning does
+not move them. Both are trimmed to where the lips move and stored under a random patient
+key; the clip is deleted. A clip with no movement, no still moment before and after, or
+no face in it is refused and nothing is kept. How much each measurement counts, and how
+sure the app has to be before it names a phrase, come out of a leave-one-take-out test
+over the enrolment itself - nothing is hand-set - and the phrase list shows what that
+test makes of every phrase. On Talk, the clip is compared with every enrolled phrase by
+dynamic time warping; a clear winner is spoken, otherwise the three best matches are shown
+to tap, and the tap is logged as what was really said so real use keeps measuring the
+matcher (`backend/tests/hebrew_eval.py`). Accuracy on clips is measured by
 `backend/tests/test_phrase_eval.py` on clips under `assets/hebrew_clips/<patient>/<phrase_id>/`.
-English is untouched: without `language=he` the service runs the same path as before, and
+English is untouched: without `language=he` the service runs the English path, and
 `backend/tools/make_english_golden.py` pins its transcriptions for the regression test.
 
 When Hebrew is selected, every button and on-screen text in the app (Talk, Settings, the voice
