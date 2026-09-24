@@ -5,9 +5,7 @@ pydantic
 python-dotenv
 python-multipart
 anthropic
-langchain
 psycopg[binary]
-langchain-anthropic
 inworld-tts
 httpx
 clerk-backend-api

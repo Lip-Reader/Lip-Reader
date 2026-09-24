@@ -15,6 +15,8 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const loadedRef = useRef(false);
   const cameraRef = useRef<CameraView | null>(null);
   const recordingRef = useRef<Promise<{ uri: string } | undefined> | null>(null);
+  const startedAtRef = useRef(0);
+  const durationRef = useRef(0);
 
   const ask = useCallback(async () => {
     if (!cam?.granted) await requestCam();
@@ -40,6 +42,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
 
   const start = useCallback(async () => {
     if (!cameraRef.current || !ready) return false;
+    startedAtRef.current = Date.now();
     recordingRef.current = cameraRef.current.recordAsync({ maxDuration: 60 });
     return true;
   }, [ready]);
@@ -48,6 +51,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     const pending = recordingRef.current;
     if (!pending || !cameraRef.current) return null;
     cameraRef.current.stopRecording();
+    durationRef.current = Date.now() - startedAtRef.current;
     recordingRef.current = null;
     const result = await pending;
     return result?.uri ? { uri: result.uri, name: "clip.mp4", type: "video/mp4" } : null;
@@ -57,7 +61,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const flip = useCallback(() => setFacing((f) => (f === "front" ? "back" : "front")), []);
 
   const value = useMemo(
-    () => ({ ready: ready && granted, error, facing, flip, start, stop, retry: ask, cameraRef, onReady }),
+    () => ({ ready: ready && granted, error, facing, flip, start, stop, retry: ask, cameraRef, onReady, durationRef }),
     [ready, granted, error, facing, flip, start, stop, ask, onReady]
   );
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>;

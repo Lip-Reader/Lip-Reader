@@ -66,11 +66,8 @@ class InferencePipeline(torch.nn.Module):
 
 
     def forward(self, data_filename, landmarks_filename=None):
-        # data_filename may also be an already-decoded (T, H, W, 3) RGB frame array
-        if isinstance(data_filename, str):
-            assert os.path.isfile(data_filename), f"data_filename: {data_filename} does not exist."
+        assert os.path.isfile(data_filename), f"data_filename: {data_filename} does not exist."
         landmarks = self.process_landmarks(data_filename, landmarks_filename)
         data = self.dataloader.load_data(data_filename, landmarks)
-        transcript, nbest = self.model.infer(data)
-        self.last_nbest = nbest
+        transcript = self.model.infer(data)
         return transcript

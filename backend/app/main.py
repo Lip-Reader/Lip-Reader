@@ -112,15 +112,23 @@ def support(body: SupportBody, user: dict | None = Depends(optional_user)):
 
 
 class RunBody(BaseModel):
-    raw: str
+    """One recording, like a line of the reference app's runs.jsonl."""
+    raw: str                        # the model's own reading (top-1), or the best phrase id
     corrected: str
     latency_ms: int | None = None
-    # how the speaker was framed: frame size, face size, crop window, rough distance
+    # how the speaker was framed: frame size, face size, rough distance, picture quality
     framing: dict | None = None
-    # the beam's ranked alternatives, so a bad run can be diagnosed later
-    nbest: list | None = None
     # what the browser's speech recognition heard, to compare with the lip reading
     heard: str | None = None
+    # the per-word options the corrector saw, so a bad run can be diagnosed later
+    word_options: str | None = None
+    # the notes about the patient the corrector was given
+    notes: list[str] | None = None
+    clip_fps: float | None = None
+    # what was actually said, when the clinician or the patient confirmed it
+    truth: str | None = None
+    # Hebrew mode: the whole ranking and whether the matcher was sure
+    hebrew: dict | None = None
 
 
 @app.post("/api/runs")
@@ -129,7 +137,8 @@ def runs(body: RunBody, user: dict | None = Depends(optional_user)):
     if body.framing:
         log.info("framing %s", body.framing)
     return {"id": _db(db.add_run, user_id, body.raw, body.corrected, body.latency_ms,
-                      body.framing, body.nbest, body.heard)}
+                      body.framing, body.heard, body.word_options, body.notes,
+                      body.clip_fps, body.truth, body.hebrew)}
 
 
 @app.get("/api/db_ping")

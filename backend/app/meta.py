@@ -1,5 +1,5 @@
 """Static metadata served by /api/team_info and /api/agent_info."""
-from .agent.prompts import SYSTEM_PROMPT
+from .corrector import LLM_SYSTEM_PROMPT_BASE
 
 TEAM_INFO = {
     "group_batch_order_number": "1_1",
@@ -10,64 +10,52 @@ TEAM_INFO = {
     ],
 }
 
-_EXAMPLE_PROMPT = "THANK YOU DARLING YOU ARE JUST TOO KIND TODAY"
-_EXAMPLE_RESPONSE = "Thank you, darling, you are just too kind today."
+# A real recorded run: every word with the model's options and how sure it was of each.
+_EXAMPLE_PROMPT = (
+    "I(100%)/HE(0%)/AND(0%) WOULD(100%)/WOULDN(0%)/WAS(0%) LIKE(100%)/WANT(0%)/SAY(0%) "
+    "TO(100%)/YOU(0%)/WE(0%) EAT(100%)/SWEET(0%)/WHEAT(0%) MURDER(42%)/BURN(16%)/BURG(13%) "
+    "AT(89%)/AND(8%)/AS(0%) FRENCH(100%)/FRIEND(0%)/FRIENDS(0%) RICE(78%)/PHRASE(9%)/FR(6%)"
+)
+_EXAMPLE_MODEL = "I WOULD LIKE TO EAT MURDER AT FRENCH RICE"
+_EXAMPLE_RESPONSE = "I would like to eat a burger and French fries."
 _EXAMPLE_STEPS = [
     {
-        "module": "correct",
-        "prompt": {"system": SYSTEM_PROMPT, "input": f"Input: {_EXAMPLE_PROMPT}"},
-        "response": {"corrected": _EXAMPLE_RESPONSE},
+        "module": "vsr",
+        "prompt": {"input": "<video clip>", "fps": 30.0},
+        "response": {"model": _EXAMPLE_MODEL, "word_options": _EXAMPLE_PROMPT},
     },
-]
-
-# Real recorded run: the conversation implies medication, so the visually
-# similar 'pill' is chosen over the transcribed 'bill'.
-_CTX_PROMPT = "WHERES MY BILL"
-_CTX_CONVERSATION = [
-    {"role": "other", "content": "The nurse has your evening medication ready."},
-    {"role": "self", "content": "Thank you, I was waiting for it."},
-]
-_CTX_RESPONSE = "Where's my pill?"
-_CTX_TRANSCRIPT = (
-    "Conversation so far (the speaker is 'You'):\n"
-    "Other: The nurse has your evening medication ready.\n"
-    "You: Thank you, I was waiting for it."
-)
-_CTX_STEPS = [
     {
         "module": "correct",
-        "prompt": {
-            "system": SYSTEM_PROMPT,
-            "input": f"{_CTX_TRANSCRIPT}\n\nInput: {_CTX_PROMPT}",
-        },
-        "response": {"corrected": _CTX_RESPONSE},
+        "prompt": {"system": LLM_SYSTEM_PROMPT_BASE, "input": f"Correct this:\n{_EXAMPLE_PROMPT}"},
+        "response": {"corrected": _EXAMPLE_RESPONSE},
     },
 ]
 
 AGENT_INFO = {
     "description": (
         "Chaplin AI is a lip-reading communication agent for non-vocal patients. "
-        "A webcam clip is transcribed by a VSR (visual speech recognition) model "
-        "(module 'vsr'), then a single LLM call (module 'correct') turns the noisy "
-        "all-caps transcription into a natural, punctuated sentence - using the "
-        "recent conversation (short-term memory, last 10 messages) to pick between "
-        "visually similar words when one fits the context better."
+        "A webcam clip is read by a VSR (visual speech recognition) model (module 'vsr'), "
+        "which gives every word with its likely alternatives and how sure it was of each. "
+        "A single LLM call (module 'correct') turns those word options into a natural, "
+        "punctuated sentence, helped by examples the clinician confirmed for this speaker "
+        "and notes about the patient, both sent from the device with the clip."
     ),
     "purpose": (
-        "Turn imperfect all-caps lip-read transcriptions into reliable, naturally "
-        "punctuated sentences so ventilated / non-vocal patients can communicate, "
-        "using the surrounding conversation to resolve words that are ambiguous "
-        "in isolation but implied by context."
+        "Turn imperfect lip-read word options into reliable, naturally punctuated "
+        "sentences so ventilated / non-vocal patients can communicate, using what is "
+        "known about the speaker to resolve words that look alike on the lips."
     ),
     "prompt_template": {
         "template": (
-            "Send the raw lip-read transcription as the prompt, ideally in all-caps, "
-            "e.g. \"IM SO EXCITED TO ME YOU TODAY\". The agent returns the corrected "
-            "sentence. POST /api/execute_lips with a short mp4/webm clip of the "
-            "speaker; the `vsr` step transcribes it and the `correct` step returns "
-            "the corrected sentence. An optional `conversation` form field "
-            "([{\"role\": \"self\"|\"other\", \"content\": \"...\"}]) supplies the chat so "
-            "far and is used to fix words that don't fit the context."
+            "Send the model's word options as the prompt: each word as its top option and "
+            "up to two alternatives with a confidence percentage, e.g. "
+            "\"I(91%)/HOW(1%)/HI(0%) NEED(80%)/KNEAD(12%) MY(100%) BEDICINE(60%)/MEDICINE(35%)\". "
+            "The agent returns the corrected sentence. POST /api/execute_lips with a short "
+            "mp4/webm clip of the speaker; the `vsr` step reads it and the `correct` step "
+            "returns the corrected sentence. Optional form fields: `duration_ms` (how long the "
+            "recording ran, for the real frame rate), `examples` (JSON list of "
+            "{\"phrase\", \"model_output\"} pairs confirmed for this speaker) and `notes` "
+            "(JSON list of short notes about the patient)."
         )
     },
     "prompt_examples": [
@@ -75,12 +63,6 @@ AGENT_INFO = {
             "prompt": _EXAMPLE_PROMPT,
             "full_response": _EXAMPLE_RESPONSE,
             "steps": _EXAMPLE_STEPS,
-        },
-        {
-            "prompt": _CTX_PROMPT,
-            "conversation": _CTX_CONVERSATION,
-            "full_response": _CTX_RESPONSE,
-            "steps": _CTX_STEPS,
         },
     ],
 }

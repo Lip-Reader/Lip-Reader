@@ -39,6 +39,9 @@ export type Recorder = {
   pickClip?: () => Promise<ClipFile | null>;
   /** How the speaker was framed in the last recording. Web only. */
   framingRef?: { current: unknown };
+  /** How long the last recording ran, in ms: the server divides the frame count by it
+      to get the clip's real frame rate (the file header cannot be trusted). */
+  durationRef?: { current: number };
   /** Latest live measurement, idle or recording. Web only. */
   qualityRef?: { current: Quality | null };
 };

@@ -41,7 +41,9 @@ panels are frosted glass floating above it. Light theme only.
 - **IconButton** — 44×44 glass circle, one icon, used for the fixed Settings (top-left) and Admin (top-right) controls.
 - **Toast** — small glass pill at the top, auto-hides in 4 s.
 - **Quality pill** — Talk screen, under the top controls, while idle or recording: estimated distance plus light, contrast, sharpness, head turn and movement, smoothed and refreshed once a second; each number and its colour hold still until the value really moves, so the pill is calm while the speaker is. Each number is `success` (best), white (fine) or `danger` (bad); the limits live in one table in `recorder.web.tsx`. A red distance always comes with words ("too close", "too far", "no face found"), and the pill stays in place when the face is lost instead of disappearing.
-- **Heard line** — Talk screen, under the sentence, only when the browser heard something: "Heard: ..." in 16px white at 75% opacity, so the sentence stays the one thing that stands out.
+- **Read line and Heard line** — Talk screen, under the sentence: "Read: ..." (what the model itself read, English only) and, when the browser heard something, "Heard: ...". Both 16px white at 75% opacity, so the sentence stays the one thing that stands out.
+- **Teach and Notes sections** — Settings, English only. Teach Chaplin: a camera panel like the phrase enrolment, then two lines (Read / Chaplin) and one question with three answers (yes, fix it, skip); saved examples listed below. About the patient: up to nine short notes with edit, delete and a dictate toggle. Same glass sections as the rest of Settings.
+- **Phrase standing** — the Hebrew phrase list shows each phrase's takes and a short status (ok / one take / confused with …), a self-test line above the list, and a verdict under the enrolment panel after every take.
 - **Emoji as icons** — landing steps and settings section titles use one emoji each (🎥 ✨ 🔊 🎙️ 👂 👤 💬) instead of icon fonts; keeps copy short and friendly.
 - **Selected chip** — a selected segment (e.g. Voices / Record my voice) uses the dark `text` color as fill with white text so it always contrasts with the light glass.
 - **Long lists** — capped at ~330px with internal scroll and a "Show more" step of 5, so the page itself never becomes one long scroll.
@@ -55,6 +57,7 @@ panels are frosted glass floating above it. Light theme only.
 ## Layout
 
 - Mobile first. Talk and Settings content column max 480px, centered; Admin max 1100px.
+- Desktop (≥ 1024): the Talk screen is not full-bleed. It sits in a centred 480px-wide frame (height up to 860px, `radius.lg`, hairline border, the one soft shadow) on the glass background, so the camera stays phone-sized.
 - Breakpoints: `< 640` phone, `640–1023` tablet, `≥ 1024` desktop (admin rail appears).
 - Safe areas respected on every fixed control.
 - Camera preview is full-bleed, un-mirrored, with a 45% dim overlay while a sentence is shown.

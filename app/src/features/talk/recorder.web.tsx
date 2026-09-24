@@ -5,23 +5,17 @@ import { CAMERA_KEY, CameraError, Facing, Grade, Quality, Recorder } from "./rec
 
 const MIME_CANDIDATES = ["video/mp4", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
 
-// Only the face area is uploaded: a centred square cut out of the camera frame.
-// MIN_CROP is the server's no-upscale floor - _decode_clip scales anything smaller
-// up to 640, and upscaling measured worse. Below it we send the frame uncropped.
-const CROP = 800;
-const MIN_CROP = 640;
-// Multiplies the span of the four face keypoints (eyes, nose, mouth), the same
-// quantity _zoom_to_face uses on the server, so both crops mean the same thing.
-const MARGIN = 2.6;
+// The whole camera frame is uploaded, as the reference desktop app does: the server
+// finds and crops the face itself, so nothing is cut or re-encoded here. The face
+// detector below only measures the picture for the quality readout and the run log.
 const DETECT_MS = 120;     // re-detect ~8x a second, not every frame
-const SMOOTH = 0.25;       // ease the window towards the face so it does not jitter
 const VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/vision_bundle.mjs";
 const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
 const MODEL =
   "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
 
 type Box = {
-  cx: number; cy: number; side: number; faceW: number; eyePx: number;
+  cx: number; cy: number; faceW: number; eyePx: number;
   fill: number; cutOff: boolean; turn: number; mouthX: number; mouthY: number;
 };
 
@@ -124,7 +118,7 @@ function getDetector() {
         });
       })
       .catch((e) => {
-        console.warn("face detector unavailable, cropping to the centre instead", e);
+        console.warn("face detector unavailable, no quality readout", e);
         return null;
       });
   }
@@ -141,12 +135,10 @@ function faceBox(detector: any, video: HTMLVideoElement, now: number): Box | nul
   if (!kp || kp.length < 4) return null;
   const xs = kp.slice(0, 4).map((k: any) => k.x * w);
   const ys = kp.slice(0, 4).map((k: any) => k.y * h);
-  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
   const eyePx = Math.abs(xs[0] - xs[1]);
   return {
     cx: bb.originX + bb.width / 2,
     cy: bb.originY + bb.height / 2,
-    side: span * MARGIN,
     faceW: bb.width,
     eyePx,
     fill: Math.max(bb.width / w, bb.height / h),
@@ -162,11 +154,20 @@ const HIDDEN = "position:fixed;left:-9999px;width:1px;height:1px";
 
 export type Framing = {
   frameW: number; frameH: number; faceW: number; facePct: number;
-  cropSide: number; eyePx: number; distCm: number;
-  /** why the crop did not run, when it did not */
-  skipped?: "frame-too-small" | "no-detector" | "no-face";
+  eyePx: number; distCm: number;
   quality?: ReturnType<typeof averageOf>;
 };
+
+/** How the speaker sat in the frame, saved with the run next to how it read. */
+function framingOf(b: Box | null, w: number, h: number): Framing {
+  return {
+    frameW: w, frameH: h,
+    faceW: Math.round(b?.faceW ?? 0),
+    facePct: b && w ? Math.round((100 * b.faceW) / w) : 0,
+    eyePx: Math.round(b?.eyePx ?? 0),
+    distCm: b ? estimateCm(b.eyePx, w, h) : 0,
+  };
+}
 
 function pickMimeType(): string {
   return MIME_CANDIDATES.find((t) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t)) || "video/webm";
@@ -186,13 +187,13 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const chunksRef = useRef<Blob[]>([]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const cropVideoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const drawRef = useRef<number | null>(null);
+  const detectVideoRef = useRef<HTMLVideoElement | null>(null);
   const framingRef = useRef<Framing | null>(null);
   const boxRef = useRef<Box | null>(null);
   const qualityRef = useRef<Quality | null>(null);
   const samplesRef = useRef<Sample[]>([]);
+  const startedAtRef = useRef(0);
+  const durationRef = useRef(0);
 
   useEffect(() => {
     storage.get(CAMERA_KEY).then((v) => {
@@ -211,16 +212,16 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     setReady(false);
     navigator.mediaDevices
       .getUserMedia({
-        video: { facingMode: facing === "front" ? "user" : "environment", width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 25 } },
+        video: { facingMode: facing === "front" ? "user" : "environment", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
         audio: false,
       })
       .then((stream) => {
         if (!alive) return stream.getTracks().forEach((t) => t.stop());
         streamRef.current = stream;
         if (videoRef.current) videoRef.current.srcObject = stream;
-        if (cropVideoRef.current) {
-          cropVideoRef.current.srcObject = stream;
-          cropVideoRef.current.play().catch(() => {});
+        if (detectVideoRef.current) {
+          detectVideoRef.current.srcObject = stream;
+          detectVideoRef.current.play().catch(() => {});
         }
         setReady(true);
       })
@@ -237,7 +238,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   }, [attempt, facing]);
 
   // The picture is measured all the time the camera is on, so the speaker can settle
-  // before pressing Talk. The recording loop follows the same face box through boxRef.
+  // before pressing Talk. The last box is also what the run log records as framing.
   useEffect(() => {
     if (!ready) return;
     const patch = document.createElement("canvas");
@@ -250,7 +251,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     let shown: Numbers | null = null;
     let missed = 0;
     const id = setInterval(() => {
-      const video = cropVideoRef.current;
+      const video = detectVideoRef.current;
       if (!detector || !ctx || !video?.videoWidth) return;
       const now = performance.now();
       const box = faceBox(detector, video, now);
@@ -313,84 +314,17 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     const stream = streamRef.current;
     if (!stream) return false;
 
-    // Only the face area is uploaded. A fixed-size window is cut out of the camera
-    // frame and pans to follow the face, so nothing is ever scaled up.
-    let source: MediaStream = stream;
-    const video = cropVideoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-
-    // Talk can be pressed before the hidden video has reported its size; without
-    // this the crop is silently skipped and the whole frame goes up.
-    if (video && !video.videoWidth) {
-      await new Promise<void>((resolve) => {
-        const done = () => {
-          video.removeEventListener("loadedmetadata", done);
-          resolve();
-        };
-        video.addEventListener("loadedmetadata", done);
-        setTimeout(done, 1000);
-      });
-    }
-    const w = video?.videoWidth || 0;
-    const h = video?.videoHeight || 0;
-    const blank = { frameW: w, frameH: h, faceW: 0, facePct: 0, cropSide: 0, eyePx: 0, distCm: 0 };
+    const video = detectVideoRef.current;
     samplesRef.current = [];
-    if (Math.min(w, h) < MIN_CROP) {
-      console.warn(`camera gave ${w}x${h}, too small to crop - uploading the whole frame`);
-      framingRef.current = { ...blank, skipped: "frame-too-small" };
-    }
+    framingRef.current = framingOf(boxRef.current, video?.videoWidth || 0, video?.videoHeight || 0);
 
-    if (video && canvas && ctx && Math.min(w, h) >= MIN_CROP) {
-      const detector = await getDetector();
-      const found = boxRef.current ?? (detector ? faceBox(detector, video, performance.now()) : null);
-      if (!detector) framingRef.current = { ...blank, skipped: "no-detector" };
-      else if (!found) framingRef.current = { ...blank, skipped: "no-face" };
-
-      // window size is fixed for the whole clip so no frame is ever rescaled
-      const side = Math.round(
-        Math.min(Math.max(found?.side ?? CROP, MIN_CROP), w, h)
-      );
-      const clamp = (v: number, max: number) => Math.min(Math.max(v, side / 2), max - side / 2);
-      let cx = clamp(found?.cx ?? w / 2, w);
-      let cy = clamp(found?.cy ?? h / 2, h);
-
-      canvas.width = canvas.height = side;
-      const record = (b: Box | null) => {
-        framingRef.current = {
-          frameW: w, frameH: h,
-          faceW: Math.round(b?.faceW ?? 0),
-          facePct: b ? Math.round((100 * b.faceW) / w) : 0,
-          cropSide: side,
-          eyePx: Math.round(b?.eyePx ?? 0),
-          distCm: b ? estimateCm(b.eyePx, w, h) : 0,
-        };
-      };
-      record(found);
-      let last = found;
-      const draw = () => {
-        // the measuring loop owns the detector; ease once per new box, not once per frame
-        const box = boxRef.current;
-        if (box && box !== last) {
-          last = box;
-          record(box);
-          cx += (clamp(box.cx, w) - cx) * SMOOTH;
-          cy += (clamp(box.cy, h) - cy) * SMOOTH;
-        }
-        ctx.drawImage(video, Math.round(cx - side / 2), Math.round(cy - side / 2),
-                      side, side, 0, 0, side, side);
-        drawRef.current = requestAnimationFrame(draw);
-      };
-      draw();
-      source = canvas.captureStream(25);
-    }
-
-    const recorder = new MediaRecorder(source, { mimeType: pickMimeType() });
+    const recorder = new MediaRecorder(stream, { mimeType: pickMimeType() });
     chunksRef.current = [];
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunksRef.current.push(e.data);
     };
     recorderRef.current = recorder;
+    startedAtRef.current = performance.now();
     recorder.start();
     return true;
   }, []);
@@ -400,8 +334,10 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     if (!recorder || recorder.state === "inactive") return Promise.resolve(null);
     return new Promise((resolve) => {
       recorder.onstop = () => {
-        if (drawRef.current !== null) cancelAnimationFrame(drawRef.current);
-        drawRef.current = null;
+        durationRef.current = Math.round(performance.now() - startedAtRef.current);
+        // the framing from the start of the clip stays when the face was lost by the end
+        const video = detectVideoRef.current;
+        if (boxRef.current) framingRef.current = framingOf(boxRef.current, video?.videoWidth || 0, video?.videoHeight || 0);
         const quality = averageOf(samplesRef.current);
         if (framingRef.current && quality) framingRef.current = { ...framingRef.current, quality };
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "video/webm" });
@@ -427,21 +363,17 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // The detector reads this hidden copy of the stream, not the on-screen preview.
   useEffect(() => {
     const video = document.createElement("video");
     video.muted = true;
     video.playsInline = true;
     video.style.cssText = HIDDEN;
-    const canvas = document.createElement("canvas");
-    canvas.style.cssText = HIDDEN;
-    document.body.append(video, canvas);
-    cropVideoRef.current = video;
-    canvasRef.current = canvas;
+    document.body.append(video);
+    detectVideoRef.current = video;
     return () => {
       video.remove();
-      canvas.remove();
-      cropVideoRef.current = null;
-      canvasRef.current = null;
+      detectVideoRef.current = null;
     };
   }, []);
 
@@ -470,7 +402,7 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
   const flip = useCallback(() => setFacing((f) => (f === "front" ? "back" : "front")), []);
 
   const value = useMemo(
-    () => ({ ready, error, facing, flip, start, stop, retry, pickClip, attach, framingRef, qualityRef }),
+    () => ({ ready, error, facing, flip, start, stop, retry, pickClip, attach, framingRef, durationRef, qualityRef }),
     [ready, error, facing, flip, start, stop, retry, pickClip, attach]
   );
   return <RecorderCtx.Provider value={value}>{children}</RecorderCtx.Provider>;

@@ -1,7 +1,7 @@
 """Eval suite: recorded clips with ground-truth transcripts.
 
-Each clip goes through the real product path (VSR model -> corrector agent) and
-the corrected text is scored against the ground truth with word-level F1.
+Each clip goes through the real product path (VSR model -> word options -> corrector)
+and the corrected text is scored against the ground truth with word-level F1.
 Needs the VSR weights and the (gitignored) .mov clips under assets/sravi_test_videos.
 Each clip is one parametrized test item, so `pytest -n 4` runs them in parallel.
 """
@@ -11,8 +11,7 @@ import os
 
 import pytest
 
-from backend.app import config, vsr
-from backend.app.agent import run_agent
+from backend.app import config, corrector, vsr
 
 SRAVI_DIR = config.REPO_ROOT / "assets" / "sravi_test_videos"
 MIN_OVERLAP = 0.9
@@ -100,8 +99,9 @@ def test_video(video_path, expected, results_collector):
         pytest.skip(f"Video not found: {video_path}")
 
     vsr.get_model(device="cpu")
-    raw_top1 = vsr.transcribe_clip(str(video_path))
-    corrected = run_agent(raw_top1)["response"]
+    transcript, alternatives = vsr.read(str(video_path))
+    raw_top1 = corrector.top1(alternatives, transcript)
+    corrected = corrector.correct(corrector.format_words(alternatives))
 
     raw_overlap = word_overlap_ratio(raw_top1, expected)
     corrected_overlap = word_overlap_ratio(corrected, expected)

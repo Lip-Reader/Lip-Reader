@@ -59,6 +59,11 @@ CREATE TABLE IF NOT EXISTS runs (
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS framing JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS nbest JSONB;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS heard TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS word_options TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS notes JSONB;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS clip_fps REAL;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS truth TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS hebrew JSONB;
 CREATE TABLE IF NOT EXISTS phrase_templates (
     id BIGSERIAL PRIMARY KEY,
     patient_key TEXT NOT NULL,
@@ -66,8 +71,15 @@ CREATE TABLE IF NOT EXISTS phrase_templates (
     frames INTEGER NOT NULL,
     dim INTEGER NOT NULL,
     features BYTEA NOT NULL,
+    geometry BYTEA,
+    fps REAL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE phrase_templates ADD COLUMN IF NOT EXISTS geometry BYTEA;
+ALTER TABLE phrase_templates ADD COLUMN IF NOT EXISTS fps REAL;
+-- takes from before the lip-geometry signature cannot be matched any more (the clip that
+-- would give it was never kept), so they go; the patient records the phrase again
+DELETE FROM phrase_templates WHERE geometry IS NULL;
 CREATE INDEX IF NOT EXISTS phrase_templates_patient ON phrase_templates (patient_key, phrase_id);
 """
 
@@ -237,19 +249,28 @@ def list_audit(limit: int = 100) -> list[dict]:
 # --- runs ------------------------------------------------------------------
 
 def add_run(user_id: str | None, raw: str, corrected: str, latency_ms: int | None,
-            framing: dict | None = None, nbest: list | None = None,
-            heard: str | None = None) -> int:
+            framing: dict | None = None, heard: str | None = None,
+            word_options: str | None = None, notes: list | None = None,
+            clip_fps: float | None = None, truth: str | None = None,
+            hebrew: dict | None = None) -> int:
+    """One row per recording, like the reference's runs.jsonl: the reading, the word
+    options, the result, the notes the corrector was given, and what was actually said
+    when the patient or clinician confirmed it."""
     return _run(lambda c: c.execute(
-        "INSERT INTO runs (user_id, raw, corrected, latency_ms, framing, nbest, heard) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        "INSERT INTO runs (user_id, raw, corrected, latency_ms, framing, heard, "
+        "word_options, notes, clip_fps, truth, hebrew) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
         (user_id, raw, corrected, latency_ms,
-         Json(framing) if framing else None, Json(nbest) if nbest else None, heard or None),
+         Json(framing) if framing else None, heard or None,
+         word_options or None, Json(notes) if notes else None, clip_fps, truth or None,
+         Json(hebrew) if hebrew else None),
     ).fetchone())["id"]
 
 
 def list_runs(limit: int = 100) -> list[dict]:
     return _run(lambda c: c.execute(
-        "SELECT id, user_id, raw, corrected, latency_ms, framing, nbest, heard, created_at "
+        "SELECT id, user_id, raw, word_options, corrected, truth, latency_ms, framing, heard, "
+        "clip_fps, notes, hebrew, created_at "
         "FROM runs ORDER BY id DESC LIMIT %s",
         (limit,),
     ).fetchall())
@@ -261,45 +282,34 @@ def count_runs_24h() -> int:
     ).fetchone())["n"]
 
 
-# --- phrase templates (Hebrew phrase mode; features only, never video) --------
+# --- phrase templates (Hebrew phrase mode; both signatures and the fps, never video) ---
 
 def add_phrase_template(patient_key: str, phrase_id: str, features: bytes, frames: int, dim: int,
-                        max_takes: int) -> int:
-    """Store one take and return the number of takes kept for this phrase."""
-    def op(c: psycopg.Connection):
-        c.execute(
-            "INSERT INTO phrase_templates (patient_key, phrase_id, frames, dim, features) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (patient_key, phrase_id, frames, dim, features),
-        )
-        c.execute(
-            "DELETE FROM phrase_templates WHERE patient_key = %s AND phrase_id = %s AND id NOT IN ("
-            "SELECT id FROM phrase_templates WHERE patient_key = %s AND phrase_id = %s "
-            "ORDER BY id DESC LIMIT %s)",
-            (patient_key, phrase_id, patient_key, phrase_id, max_takes),
-        )
-        return c.execute(
-            "SELECT count(*) AS n FROM phrase_templates WHERE patient_key = %s AND phrase_id = %s",
-            (patient_key, phrase_id),
-        ).fetchone()["n"]
-
-    return _run(op)
+                        geometry: bytes, fps: float) -> int:
+    """Store one take and return its id."""
+    return _run(lambda c: c.execute(
+        "INSERT INTO phrase_templates (patient_key, phrase_id, frames, dim, features, geometry, fps) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (patient_key, phrase_id, frames, dim, features, geometry, fps),
+    ).fetchone())["id"]
 
 
 def list_phrase_templates(patient_key: str) -> list[dict]:
     return _run(lambda c: c.execute(
-        "SELECT phrase_id, frames, dim, features FROM phrase_templates "
+        "SELECT id, phrase_id, frames, dim, features, geometry, fps FROM phrase_templates "
         "WHERE patient_key = %s ORDER BY id",
         (patient_key,),
     ).fetchall())
 
 
-def count_phrase_takes(patient_key: str) -> dict[str, int]:
-    rows = _run(lambda c: c.execute(
-        "SELECT phrase_id, count(*) AS n FROM phrase_templates WHERE patient_key = %s GROUP BY phrase_id",
-        (patient_key,),
-    ).fetchall())
-    return {r["phrase_id"]: r["n"] for r in rows}
+def delete_last_phrase_take(patient_key: str, phrase_id: str) -> bool:
+    """Drop this phrase's newest take. True when there was one."""
+    cur = _run(lambda c: c.execute(
+        "DELETE FROM phrase_templates WHERE id = ("
+        "SELECT id FROM phrase_templates WHERE patient_key = %s AND phrase_id = %s "
+        "ORDER BY id DESC LIMIT 1)",
+        (patient_key, phrase_id)))
+    return cur.rowcount > 0
 
 
 def delete_phrase_templates(patient_key: str, phrase_id: str | None = None) -> int:

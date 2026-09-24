@@ -9,11 +9,51 @@ export type Step = { module: string; prompt: Record<string, unknown>; response: 
 export type Language = "en" | "he";
 export type Gender = "m" | "f";
 export type Candidate = { id: string; text: string; score: number };
-export type ExecuteResult = { response: string; steps: Step[]; raw: string; confident?: boolean; candidates?: Candidate[] };
-export type ExecuteOptions = { language?: Language; patientKey?: string | null; gender?: Gender };
+/** A confirmed sentence and the word options the model produced for it (learning mode). */
+export type Example = { phrase: string; model_output: string };
+/** The Hebrew matcher's full ranking: [phrase id, score, encoder distance, lip distance]. */
+export type HebrewResult = { ranked: [string, number, number, number][]; confident: boolean };
+export type ExecuteResult = {
+  response: string;
+  steps: Step[];
+  /** the model's top-1 reading (English) or the best phrase id (Hebrew) */
+  raw: string;
+  /** the per-word options string the corrector saw; "" in Hebrew mode */
+  wordOptions: string;
+  clipFps: number | null;
+  confident?: boolean;
+  candidates?: Candidate[];
+  hebrew?: HebrewResult;
+};
+export type ExecuteOptions = {
+  language?: Language;
+  patientKey?: string | null;
+  gender?: Gender;
+  durationMs?: number;
+  examples?: Example[];
+  notes?: string[];
+};
 export type Phrase = { id: string; group: string; text_m: string; text_f: string };
 export type PhraseBank = { language: string; version: number; groups: { id: string; title: string }[]; phrases: Phrase[] };
-export type PhraseTemplates = { takes: Record<string, number>; seed_phrases: string[]; storage: boolean };
+export type PhraseStatus = { code: "ok" | "one_take" | "confused"; other: string | null };
+export type Verdict = { code: "first_take" | "ok" | "confused"; other: string | null; takes: number };
+export type SelfTest = { n: number; top1: number; top3: number };
+export type PhraseTemplates = {
+  takes: Record<string, number>;
+  status_by_phrase: Record<string, PhraseStatus>;
+  self_test: SelfTest | null;
+  storage: boolean;
+};
+
+/** An error from the lip-reading service, with its code when it sent one
+ *  (no_face, nothing_read, still, no_rest, not_enrolled). */
+export class ApiError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
+}
 export type SpokenToken = { t: string; start: number };
 export type ClipFile = Blob | { uri: string; name: string; type: string };
 export type PublicSettings = { default_voice_id: string; lip_reading_enabled: boolean };
@@ -74,10 +114,14 @@ function clipForm(clip: ClipFile): FormData {
 
 export async function executeLips(clip: ClipFile, opts: ExecuteOptions = {}): Promise<ExecuteResult> {
   const form = clipForm(clip);
+  if (opts.durationMs) form.append("duration_ms", String(opts.durationMs));
   if (opts.language === "he") {
     form.append("language", "he");
     if (opts.patientKey) form.append("patient_key", opts.patientKey);
     form.append("gender", opts.gender ?? "m");
+  } else {
+    if (opts.examples?.length) form.append("examples", JSON.stringify(opts.examples));
+    if (opts.notes?.length) form.append("notes", JSON.stringify(opts.notes));
   }
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 180_000);
@@ -96,13 +140,21 @@ export async function executeLips(clip: ClipFile, opts: ExecuteOptions = {}): Pr
   if (res.status === 413) throw new Error("Recording too large. Try a shorter clip.");
   if (!res.ok) throw new Error(`/api/execute_lips failed: ${res.status}`);
   const data = await res.json();
-  if (data.status !== "ok" || !data.response) throw new Error(data.error || "lip reading failed");
+  if (data.status !== "ok" || !data.response) throw new ApiError(data.error || "lip reading failed", data.code);
   const steps: Step[] = data.steps || [];
+  const vsr = steps.find((s) => s.module === "vsr")?.response ?? {};
   const candidates: Candidate[] | undefined = data.candidates;
-  const raw = candidates
-    ? candidates.map((c) => `${c.id}:${c.score}`).join(" ")
-    : String(steps.find((s) => s.module === "vsr")?.response?.raw_transcription ?? "");
-  return { response: data.response, steps, raw, confident: data.confident, candidates };
+  const fps = vsr.fps ?? steps.find((s) => s.module === "vsr")?.prompt?.fps;
+  return {
+    response: data.response,
+    steps,
+    raw: candidates ? candidates[0]?.id ?? "" : String(vsr.model ?? ""),
+    wordOptions: String(vsr.word_options ?? ""),
+    clipFps: typeof fps === "number" ? fps : null,
+    confident: data.confident,
+    candidates,
+    hebrew: data.hebrew,
+  };
 }
 
 export const getPhrases = (lang: Language) => request<PhraseBank>(API_BASE, `/api/phrases/${lang}`);
@@ -116,12 +168,28 @@ export async function getPhraseTemplates(patientKey: string): Promise<PhraseTemp
   return d;
 }
 
-export async function enrollPhrase(clip: ClipFile, patientKey: string, phraseId: string): Promise<{ takes: number }> {
+export async function enrollPhrase(
+  clip: ClipFile, patientKey: string, phraseId: string, durationMs?: number,
+): Promise<{ takes: number; verdict: Verdict }> {
   const form = clipForm(clip);
   form.append("patient_key", patientKey);
   form.append("phrase_id", phraseId);
-  const d = await request<{ status: string; error?: string; takes: number }>(VSR_BASE, "/api/enroll_phrase", { method: "POST", body: form });
-  if (d.status !== "ok") throw new Error(d.error || "Couldn't save that take.");
+  if (durationMs) form.append("duration_ms", String(durationMs));
+  const d = await request<{ status: string; error?: string; code?: string; takes: number; verdict: Verdict }>(
+    VSR_BASE, "/api/enroll_phrase", { method: "POST", body: form },
+  );
+  if (d.status !== "ok") throw new ApiError(d.error || "Couldn't save that take.", d.code);
+  return { takes: d.takes, verdict: d.verdict };
+}
+
+/** Drop the newest take of one phrase (the reference's BACKSPACE). */
+export async function dropLastTake(patientKey: string, phraseId: string): Promise<{ takes: number }> {
+  const d = await request<{ status: string; error?: string; code?: string; takes: number }>(
+    VSR_BASE,
+    `/api/phrase_templates?patient_key=${encodeURIComponent(patientKey)}&phrase_id=${encodeURIComponent(phraseId)}&last=1`,
+    { method: "DELETE" },
+  );
+  if (d.status !== "ok") throw new ApiError(d.error || "Couldn't drop that take.", d.code);
   return { takes: d.takes };
 }
 
@@ -160,17 +228,29 @@ export const putMySettings = (token: Token, patch: Partial<UserSettings>) =>
   request<UserSettings>(API_BASE, "/api/me/settings", json(patch, "PUT"), token);
 export const sendSupport = (token: Token, message: string) =>
   request<{ id: number }>(API_BASE, "/api/support", json({ message }), token);
-export const logRun = (
-  token: Token, raw: string, corrected: string, latencyMs: number,
-  framing?: unknown, nbest?: unknown, heard?: string,
-) =>
+/** One line per recording, like the reference's runs.jsonl: the reading, the word
+ *  options, the result, the notes the corrector saw, and what was actually said when known. */
+export type RunLog = {
+  raw: string;
+  corrected: string;
+  latencyMs: number;
+  framing?: unknown;
+  heard?: string;
+  wordOptions?: string;
+  notes?: string[];
+  clipFps?: number | null;
+  truth?: string | null;
+  hebrew?: HebrewResult | null;
+};
+export const logRun = (token: Token, run: RunLog) =>
   request(API_BASE, "/api/runs",
-    json({ raw, corrected, latency_ms: latencyMs, framing: framing ?? null, nbest: nbest ?? null, heard: heard || null }),
+    json({
+      raw: run.raw, corrected: run.corrected, latency_ms: run.latencyMs,
+      framing: run.framing ?? null, heard: run.heard || null,
+      word_options: run.wordOptions || null, notes: run.notes ?? null,
+      clip_fps: run.clipFps ?? null, truth: run.truth ?? null, hebrew: run.hebrew ?? null,
+    }),
     token).catch(() => {});
-
-/** The beam's ranked alternatives, carried on the vsr step of an execute result. */
-export const nbestOf = (r: ExecuteResult) =>
-  r.steps?.find((s) => s.module === "vsr")?.response?.nbest ?? null;
 
 export type AdminOverview = {
   users: number;
@@ -204,7 +284,9 @@ export type RunEntry = {
   id: number;
   user_id: string | null;
   raw: string;
+  word_options: string | null;
   corrected: string;
+  truth: string | null;
   heard: string | null;
   latency_ms: number | null;
   created_at: string;

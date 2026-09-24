@@ -24,7 +24,7 @@ def main() -> int:
         print(f"no clips found in {VIDEO_DIR}")
         return 1
     vsr.get_model(device="cpu")
-    golden = {c.name: vsr.transcribe_clip(str(c)) for c in clips}
+    golden = {c.name: vsr.read(str(c))[0] for c in clips}
     for name, text in golden.items():
         print(f"{name}: {text}")
     (VIDEO_DIR / "golden_raw.json").write_text(json.dumps(golden, indent=2, ensure_ascii=False) + "\n")
