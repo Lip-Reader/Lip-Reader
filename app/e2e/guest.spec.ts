@@ -37,7 +37,8 @@ test("guest talk flow: record, sentence, speak", async ({ page }) => {
 
 test("listening: what the browser heard shows under the sentence and is logged; Settings turns it off", async ({ page }) => {
   await page.addInitScript(() => {
-    (window as any).webkitSpeechRecognition = class {
+    // newer Chromium ships the unprefixed name too; the app takes whichever exists first
+    (window as any).SpeechRecognition = (window as any).webkitSpeechRecognition = class {
       onresult?: (e: unknown) => void;
       onend?: () => void;
       start() {
@@ -222,18 +223,20 @@ test("flip camera switches to the back camera and remembers it", async ({ page }
   await page.goto("/talk");
   await expect(page.getByTestId("talk-button")).toBeEnabled();
   expect(await facingOf(-1)).toBe("user");
-  await expect(page.locator("video")).toHaveAttribute("data-facing", "front");
+  // the preview carries data-facing; the recorder's hidden detector video does not
+  const preview = page.locator("video[data-facing]");
+  await expect(preview).toHaveAttribute("data-facing", "front");
   await page.getByTestId("flip-camera-button").click();
-  await expect(page.locator("video")).toHaveAttribute("data-facing", "back");
+  await expect(preview).toHaveAttribute("data-facing", "back");
   await expect(page.getByTestId("talk-button")).toBeEnabled();
   expect(await facingOf(-1)).toBe("environment");
-  expect(await page.locator("video").evaluate((v) => getComputedStyle(v).transform)).toBe("none");
+  expect(await preview.evaluate((v) => getComputedStyle(v).transform)).toBe("none");
   await page.getByTestId("talk-button").click();
   await expect(page.getByTestId("flip-camera-button")).toHaveAttribute("aria-disabled", "true");
   await page.getByTestId("stop-button").click();
   await expect(page.getByTestId("sentence")).toBeVisible();
   await page.reload();
-  await expect(page.locator("video")).toHaveAttribute("data-facing", "back");
+  await expect(page.locator("video[data-facing]")).toHaveAttribute("data-facing", "back");
   await expect(page.getByTestId("talk-button")).toBeEnabled();
   expect(await facingOf(-1)).toBe("environment");
 });
@@ -354,10 +357,13 @@ test("desktop: the talk screen sits in a phone-sized frame, not the whole window
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/talk");
   await expect(page.getByTestId("talk-button")).toBeEnabled();
-  const video = await page.locator("video").first().boundingBox();
-  expect(video?.width).toBe(480);
+  // the camera fills a 480px frame (a hairline border inside it), centred in the window
+  const video = await page.locator("video[data-facing]").boundingBox();
+  expect(video?.width).toBeGreaterThanOrEqual(476);
+  expect(video?.width).toBeLessThanOrEqual(480);
   expect(video?.height).toBeLessThanOrEqual(752);
-  expect(video?.x).toBe(400);
+  expect(video?.x).toBeGreaterThanOrEqual(400);
+  expect(video?.x).toBeLessThanOrEqual(402);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect.poll(async () => (await page.locator("video").first().boundingBox())?.width).toBe(390);
+  await expect.poll(async () => (await page.locator("video[data-facing]").boundingBox())?.width).toBe(390);
 });
