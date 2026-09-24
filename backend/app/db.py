@@ -85,7 +85,7 @@ CREATE INDEX IF NOT EXISTS phrase_templates_patient ON phrase_templates (patient
 
 USER_SETTING_FIELDS = ("voice_id", "language", "gender", "patient_key")
 
-APP_SETTINGS_DEFAULTS = {"default_voice_id": "Brian", "lip_reading_enabled": True}
+APP_SETTINGS_DEFAULTS = {"default_voice_id": "Brian", "lip_reading_enabled": True, "show_vsr_output": False}
 
 _lock = threading.Lock()
 _conn: psycopg.Connection | None = None

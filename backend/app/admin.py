@@ -59,6 +59,7 @@ def users():
 class SettingsPatch(BaseModel):
     default_voice_id: str | None = None
     lip_reading_enabled: bool | None = None
+    show_vsr_output: bool | None = None
 
 
 @router.get("/settings")

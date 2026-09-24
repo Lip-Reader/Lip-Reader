@@ -56,7 +56,7 @@ export class ApiError extends Error {
 }
 export type SpokenToken = { t: string; start: number };
 export type ClipFile = Blob | { uri: string; name: string; type: string };
-export type PublicSettings = { default_voice_id: string; lip_reading_enabled: boolean };
+export type PublicSettings = { default_voice_id: string; lip_reading_enabled: boolean; show_vsr_output: boolean };
 export type UserSettings = { voice_id: string | null; language: Language | null; gender: Gender | null; patient_key: string | null };
 
 type Token = string | null | undefined;
@@ -270,7 +270,7 @@ export type AdminUser = {
   last_sign_in_at: string | null;
   voice_id: string | null;
 };
-export type AdminSettings = { default_voice_id: string; lip_reading_enabled: boolean };
+export type AdminSettings = { default_voice_id: string; lip_reading_enabled: boolean; show_vsr_output: boolean };
 export type SupportMessage = {
   id: number;
   user_id: string | null;

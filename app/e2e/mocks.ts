@@ -25,7 +25,7 @@ const SILENT_MP3 =
 
 export async function mockBackend(page: Page, opts: { admin?: boolean } = {}) {
   await page.route("**/health", (r) => r.fulfill({ json: { status: "ok", vsr_available: true } }));
-  await page.route("**/api/settings/public", (r) => r.fulfill({ json: { default_voice_id: "Brian", lip_reading_enabled: true } }));
+  await page.route("**/api/settings/public", (r) => r.fulfill({ json: { default_voice_id: "Brian", lip_reading_enabled: true, show_vsr_output: false } }));
   await page.route("**/voices", (r) =>
     r.fulfill({
       json: {
@@ -124,7 +124,7 @@ export async function mockBackend(page: Page, opts: { admin?: boolean } = {}) {
         },
       })
     );
-    await page.route("**/api/admin/settings", (r) => r.fulfill({ json: { settings: { default_voice_id: "Brian", lip_reading_enabled: true } } }));
+    await page.route("**/api/admin/settings", (r) => r.fulfill({ json: { settings: { default_voice_id: "Brian", lip_reading_enabled: true, show_vsr_output: false } } }));
     await page.route("**/api/admin/support", (r) =>
       r.fulfill({
         json: {

@@ -10,6 +10,7 @@ export default function Settings() {
   const { data, error, loading, getToken } = useAdminData(load);
   const [voice, setVoice] = useState("");
   const [enabled, setEnabled] = useState(true);
+  const [showRaw, setShowRaw] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -17,13 +18,14 @@ export default function Settings() {
     if (!data) return;
     setVoice(data.settings.default_voice_id);
     setEnabled(data.settings.lip_reading_enabled);
+    setShowRaw(data.settings.show_vsr_output);
   }, [data]);
 
   async function save() {
     setSaving(true);
     setNote(null);
     try {
-      await admin.patchSettings(await getToken(), { default_voice_id: voice, lip_reading_enabled: enabled });
+      await admin.patchSettings(await getToken(), { default_voice_id: voice, lip_reading_enabled: enabled, show_vsr_output: showRaw });
       setNote("Saved");
     } catch {
       setNote("Couldn't save");
@@ -50,6 +52,12 @@ export default function Settings() {
         <View style={styles.switchRow}>
           <Text style={styles.hint}>Enable the Talk button for everyone.</Text>
           <Switch value={enabled} onValueChange={setEnabled} trackColor={{ true: colors.accent }} />
+        </View>
+      </Card>
+      <Card title="Show what the model read">
+        <View style={styles.switchRow}>
+          <Text style={styles.hint}>Show the raw lip-reading under the sentence on the Talk screen for admins. Other users only ever see the final sentence.</Text>
+          <Switch value={showRaw} onValueChange={setShowRaw} trackColor={{ true: colors.accent }} />
         </View>
       </Card>
       <View style={styles.saveRow}>

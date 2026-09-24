@@ -27,12 +27,22 @@ test("guest talk flow: record, sentence, speak", async ({ page }) => {
   await page.waitForTimeout(800);
   await page.getByTestId("stop-button").click();
   await expect(page.getByTestId("sentence")).toHaveText("I would like some water.");
-  await expect(page.getByTestId("read")).toHaveText("Read: I WOULD LIKE SOME WHAT ER");
+  await expect(page.getByTestId("read")).toHaveCount(0);
   const between = calls.slice(before).filter((u) => !u.includes("localhost:517"));
   expect(between.filter((u) => u.includes("/api/execute_lips"))).toHaveLength(1);
   expect(between.filter((u) => u.includes("/api/execute_lips") || u.includes("/speak"))).toHaveLength(1);
   await page.getByTestId("speak-button").click();
   await expect(page.getByTestId("sentence")).toHaveText("I would like some water.");
+});
+
+test("guests never see the Read line, even with the admin flag on", async ({ page }) => {
+  await page.route("**/api/settings/public", (r) => r.fulfill({ json: { default_voice_id: "Brian", lip_reading_enabled: true, show_vsr_output: true } }));
+  await page.goto("/talk");
+  await page.getByTestId("talk-button").click();
+  await page.waitForTimeout(800);
+  await page.getByTestId("stop-button").click();
+  await expect(page.getByTestId("sentence")).toHaveText("I would like some water.");
+  await expect(page.getByTestId("read")).toHaveCount(0);
 });
 
 test("listening: what the browser heard shows under the sentence and is logged; Settings turns it off", async ({ page }) => {

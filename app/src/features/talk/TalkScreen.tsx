@@ -52,6 +52,7 @@ function Talk() {
   const [seconds, setSeconds] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
   const [warm, setWarm] = useState<"warming" | "ready" | "unavailable">("warming");
   const hideToast = useCallback(() => setToast(null), []);
 
@@ -71,7 +72,10 @@ function Talk() {
 
   useEffect(() => {
     getPublicSettings()
-      .then((s) => setPaused(!s.lip_reading_enabled))
+      .then((s) => {
+        setPaused(!s.lip_reading_enabled);
+        setShowRaw(s.show_vsr_output);
+      })
       .catch(() => {});
   }, []);
 
@@ -263,8 +267,8 @@ function Talk() {
                   ))
                 : text}
             </Text>
-            {/* in Hebrew the sentence is the phrase itself, so there is nothing to show */}
-            {!!rawResult && language === "en" && (
+            {/* admins only, behind the admin flag; in Hebrew the sentence is the phrase itself, so there is nothing to show */}
+            {session.isAdmin && showRaw && !!rawResult && language === "en" && (
               <Text style={styles.heard} testID="read">
                 {t(language, "readLabel")}: {rawResult}
               </Text>

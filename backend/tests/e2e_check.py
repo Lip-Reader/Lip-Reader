@@ -113,6 +113,7 @@ def main() -> int:
         r.status_code == 200
         and isinstance(body.get("default_voice_id"), str)
         and isinstance(body.get("lip_reading_enabled"), bool)
+        and isinstance(body.get("show_vsr_output"), bool)
     )
     print(f"status: {r.status_code}  latency: {time.time() - t0:.1f}s  body: {body or r.text[:120]}")
 
