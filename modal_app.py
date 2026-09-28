@@ -65,6 +65,11 @@ app = modal.App("chaplin-ai")
     memory=8192,
     enable_memory_snapshot=True,
 )
+# Several requests per container: without this a container takes one request at a time,
+# so every /health ping sent while a clip is uploading or being read waits for a brand-new
+# container (a 30-60 s snapshot restore) and the app shows "Waking the model up" although
+# the service is warm. Inference itself is still one clip at a time (vsr._infer_lock).
+@modal.concurrent(max_inputs=8)
 class Backend:
     @modal.enter(snap=True)
     def load_model(self):
