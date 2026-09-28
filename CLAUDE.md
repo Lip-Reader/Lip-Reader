@@ -48,7 +48,10 @@ api/index.py        Vercel entry for backend/app/main.py.   modal_app.py: Modal 
   on the web), OpenCV reads the file as it is, Mediapipe crops the mouth, and the model
   gives the transcript plus per-word options with CTC probabilities (`WORD(92%)/ALT(5%)`).
   The app sends `duration_ms` so the service knows the clip's real frame rate. This is the
-  reference desktop app's flow (`~/Desktop/tmp/lipreader`); keep the two in step.
+  reference desktop app's flow (`~/Desktop/tmp/lipreader`); keep the two in step. The web
+  recorder caps the clip at 2.5 Mbps (Chrome's default; Safari's is 10): Modal's HTTP
+  ingress often takes uploads at only ~60 KB/s and iOS Safari drops any request that runs
+  past 60 s, so clip size is what decides whether a phone gets an answer at all.
 - **Corrector** (`backend/app/corrector.py`): one `claude-sonnet-5` call with adaptive
   thinking over the word-options string; the answer is its last line, with a full stop.
   The prompt also carries **examples** (learning mode: sentences the clinician confirmed

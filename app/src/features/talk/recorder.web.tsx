@@ -318,7 +318,10 @@ export function RecorderProvider({ children }: { children: ReactNode }) {
     samplesRef.current = [];
     framingRef.current = framingOf(boxRef.current, video?.videoWidth || 0, video?.videoHeight || 0);
 
-    const recorder = new MediaRecorder(stream, { mimeType: pickMimeType() });
+    // Chrome's default rate. Safari's is 10 Mbps, which made an iPhone clip 4x the size of a
+    // desktop one; the lip-reading service takes uploads in slowly (often ~60 KB/s), so those
+    // clips outlived Safari's 60 s request limit and never came back. Same frame, fewer bytes.
+    const recorder = new MediaRecorder(stream, { mimeType: pickMimeType(), videoBitsPerSecond: 2_500_000 });
     chunksRef.current = [];
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunksRef.current.push(e.data);

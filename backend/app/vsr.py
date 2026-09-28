@@ -17,6 +17,9 @@ log = logging.getLogger("chaplin.vsr")
 
 _model = None
 _model_lock = threading.Lock()
+# The service answers several requests at once (health pings, uploads still arriving), but
+# the model, its beam search and the face detector are not thread-safe: one clip at a time.
+_infer_lock = threading.Lock()
 
 
 class BadClip(Exception):
@@ -94,7 +97,7 @@ def move_model_to_device(device=None):
 def read(path: str) -> tuple[str, list]:
     """The transcript and the per-word alternatives ([(word, probability), ...] per word)
     of one clip. Raises NoFace when nobody is in it."""
-    with refusing_no_face():
+    with _infer_lock, refusing_no_face():
         return get_model()(path)
 
 
@@ -106,7 +109,7 @@ def signatures(path: str):
     from .hebrew import lip_geometry
 
     model = get_model()
-    with refusing_no_face():
+    with _infer_lock, refusing_no_face():
         landmarks = model.process_landmarks(path, None)
         data = model.dataloader.load_data(path, landmarks)
         a = model.model.encode_features(data).detach().cpu().float().numpy()
